@@ -12,6 +12,7 @@
                 "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/src",
                 "C:/Users/frank/.platformio/packages/framework-libopencm3",
                 "C:/Users/frank/.platformio/packages/framework-libopencm3/include",
+                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/lib/rtos",
                 ""
             ],
             "browse": {
@@ -21,6 +22,7 @@
                     "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/src",
                     "C:/Users/frank/.platformio/packages/framework-libopencm3",
                     "C:/Users/frank/.platformio/packages/framework-libopencm3/include",
+                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/lib/rtos",
                     ""
                 ]
             },
