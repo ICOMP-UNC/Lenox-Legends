@@ -8,34 +8,32 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/include",
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/src",
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/lib/rtos",
-                "C:/Users/frank/.platformio/packages/framework-libopencm3",
-                "C:/Users/frank/.platformio/packages/framework-libopencm3/include",
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/libdeps/bluepill_f103c8/PlatformIO-FreeRTOS",
+                "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/include",
+                "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/src",
+                "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/lib/rtos",
+                "/home/franivan98/.platformio/packages/framework-libopencm3",
+                "/home/franivan98/.platformio/packages/framework-libopencm3/include",
                 ""
             ],
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/include",
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/src",
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/lib/rtos",
-                    "C:/Users/frank/.platformio/packages/framework-libopencm3",
-                    "C:/Users/frank/.platformio/packages/framework-libopencm3/include",
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/libdeps/bluepill_f103c8/PlatformIO-FreeRTOS",
+                    "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/include",
+                    "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/src",
+                    "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/lib/rtos",
+                    "/home/franivan98/.platformio/packages/framework-libopencm3",
+                    "/home/franivan98/.platformio/packages/framework-libopencm3/include",
                     ""
                 ]
             },
             "defines": [
-                "PLATFORMIO=60116",
+                "PLATFORMIO=60115",
                 "STM32F1",
                 "STM32F103xB",
                 "F_CPU=72000000L",
                 ""
             ],
-            "compilerPath": "C:/Users/frank/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gcc.exe",
+            "compilerPath": "/home/franivan98/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gcc",
             "compilerArgs": [
                 "-mthumb",
                 "-mcpu=cortex-m3",

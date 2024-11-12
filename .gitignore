@@ -42,6 +42,10 @@
 *.idb
 *.pdb
 
+#platformio
+*.checksum
+*.json
+
 # Kernel Module Compile Results
 *.mod*
 *.cmd

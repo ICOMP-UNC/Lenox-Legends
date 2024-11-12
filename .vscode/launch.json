@@ -12,11 +12,11 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/build/bluepill_f103c8/firmware.elf",
+            "executable": "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/.pio/build/bluepill_f103c8/firmware.elf",
             "projectEnvName": "bluepill_f103c8",
-            "toolchainBinDir": "C:/Users/frank/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "toolchainBinDir": "/home/franivan98/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "C:/Users/frank/.platformio/platforms/ststm32/misc/svd/STM32F103xx.svd",
+            "svdPath": "/home/franivan98/.platformio/platforms/ststm32/misc/svd/STM32F103xx.svd",
             "preLaunchTask": {
                 "type": "PlatformIO",
                 "task": "Pre-Debug"
@@ -26,21 +26,21 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/build/bluepill_f103c8/firmware.elf",
+            "executable": "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/.pio/build/bluepill_f103c8/firmware.elf",
             "projectEnvName": "bluepill_f103c8",
-            "toolchainBinDir": "C:/Users/frank/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "toolchainBinDir": "/home/franivan98/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "C:/Users/frank/.platformio/platforms/ststm32/misc/svd/STM32F103xx.svd"
+            "svdPath": "/home/franivan98/.platformio/platforms/ststm32/misc/svd/STM32F103xx.svd"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/build/bluepill_f103c8/firmware.elf",
+            "executable": "/home/franivan98/Escritorio/ElectronicaDigitalIII/TPFINAL/Lenox-Legends/.pio/build/bluepill_f103c8/firmware.elf",
             "projectEnvName": "bluepill_f103c8",
-            "toolchainBinDir": "C:/Users/frank/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "toolchainBinDir": "/home/franivan98/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "C:/Users/frank/.platformio/platforms/ststm32/misc/svd/STM32F103xx.svd",
+            "svdPath": "/home/franivan98/.platformio/platforms/ststm32/misc/svd/STM32F103xx.svd",
             "loadMode": "manual"
         }
     ]
