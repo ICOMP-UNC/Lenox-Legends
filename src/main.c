@@ -1,3 +1,6 @@
+/**
+ * Se esta sacando una señal PWM por el pin B7.
+ */
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
@@ -35,7 +38,7 @@ int main()
         GPIOB,                          // Puerto correspondiente
         GPIO_MODE_OUTPUT_2_MHZ,         // Máxima velocidad de switcheo
         GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, // Función alternativa
-        GPIO7);                         // PB7 para el canal rojo
+        GPIO7);                         // PB7 para el canal de PWM
 
     /* Configuración del TIM4 para PWM centrado */
     rcc_periph_clock_enable(RCC_TIM4);
@@ -47,7 +50,7 @@ int main()
 
     timer_set_period(TIM4, MAX_COUNT - 1); // 72M/2/10000 = 3,6kHz
 
-    // Configura el canal PWM para el LED rojo en PB7
+    // Configura el canal PWM para el LED en PB7
     timer_set_oc_mode(TIM4, TIM_OC2, TIM_OCM_PWM2); // PWM2: activo bajo
     timer_enable_oc_output(TIM4, TIM_OC2);          // Habilitar salida OC2
 
@@ -55,21 +58,20 @@ int main()
     timer_enable_counter(TIM4);
 
     uint16_t pwm_val = 0;
-    uint8_t increment = 1;
+    int8_t increment = 1; // Puede ser positivo o negativo para alternar
 
     while (true)
     {
         timer_set_oc_value(TIM4, TIM_OC2, pwm_val);
 
-        if (pwm_val >= MAX_COUNT - 1)
-        {
-            increment = -1; // Empieza a disminuir brillo
-        }
-        else if (pwm_val == 0)
-        {
-            increment = 1;  // Empieza a aumentar brillo
-        }
+        // Alterna entre aumentar y disminuir el ciclo de trabajo
         pwm_val += increment;
+
+        // Cambia la dirección del incremento cuando llega al mínimo o al máximo
+        if (pwm_val >= MAX_COUNT - 1 || pwm_val == 0)
+        {
+            increment = -increment;
+        }
 
         delay_ms(1); // Pausa de 1ms entre cambios de brillo
     }
