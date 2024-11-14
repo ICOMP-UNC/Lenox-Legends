@@ -42,6 +42,12 @@
 *.idb
 *.pdb
 
+#platformio
+.pio/
+.vscode/
+.idea/
+.platformio/
+
 # Kernel Module Compile Results
 *.mod*
 *.cmd
