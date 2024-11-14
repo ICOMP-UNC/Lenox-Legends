@@ -6,6 +6,7 @@
  * A su vez la señal PWM se encarga de manejar el brillo de un led.
  * Y podemos observar que para valores bajos de la lectura del ADC la señal PWM tiene un duty cycle grande,
  * mientras que para valores grandes de la lectura del ADC la señal PWM tiene un duty cycle pequeño.
+ * Se utiliza otro canal del ADC y al pasar determinado UMBRAL se enciende el led pc13.
  */
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
@@ -17,9 +18,11 @@
 
 #define MAX_COUNT 10000     // Máximo valor del PWM
 #define ADC_MAX_VALUE 4095  // Valor máximo de 12 bits para el ADC
+#define UMBRAL 2000
 
 volatile uint32_t millis;
-volatile uint16_t adc_value = 0; // Valor leído del ADC
+volatile uint16_t adc_value1 = 0; // Valor leído del ADC
+volatile uint16_t adc_value2 = 0; // Valor leído del ADC
 
 /**
  * @brief Delay bloqueante utilizando el SysTick
@@ -39,8 +42,12 @@ void configure_adc(void)
 {
     rcc_periph_clock_enable(RCC_ADC1);       // Habilita el reloj para el ADC1
     adc_power_off(ADC1);                     // Apaga el ADC para configurarlo
+    
     adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_1DOT5CYC); // Configura el tiempo de muestreo
+    adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_1DOT5CYC);
+
     adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0); // Selecciona el canal 0 para el ADC (A0)
+
     adc_power_on(ADC1);                      // Enciende el ADC
     adc_reset_calibration(ADC1);             // Reinicia la calibración
     adc_calibrate(ADC1);                     // Calibra el ADC
@@ -63,11 +70,11 @@ void configure_timer2(void)
  * @brief Lee el valor actual del ADC en el canal 0.
  * @return Valor del ADC de 12 bits (0 a 4095).
  */
-uint16_t read_adc(void)
-{
-    adc_start_conversion_direct(ADC1);       // Inicia la conversión
-    while (!adc_eoc(ADC1));                  // Espera a que termine la conversión
-    return adc_read_regular(ADC1);           // Retorna el valor convertido
+uint16_t read_adc(uint8_t channel) {
+    adc_set_regular_sequence(ADC1, 1, channel);
+    adc_start_conversion_direct(ADC1);
+    while (!adc_eoc(ADC1));
+    return adc_read_regular(ADC1);
 }
 
 void configure_usart(void) {
@@ -81,6 +88,14 @@ void configure_usart(void) {
     usart_set_parity(USART1, USART_PARITY_NONE);
     usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
     usart_enable(USART1);
+}
+
+/**
+ * @brief Configura el LED en PC13.
+ */
+void configure_gpio(void) {
+    rcc_periph_clock_enable(RCC_GPIOC);       // Habilita GPIOC para el LED
+    gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13); // Configura el LED en PC13
 }
 
 void usart_send_value(uint16_t value) {
@@ -135,17 +150,30 @@ int main()
 
     configure_usart();
 
+    configure_gpio();
+
     uint16_t pwm_val = 0;
 
     while (true)
     {
         // Escala el valor del ADC al rango del PWM
-        pwm_val = (adc_value * MAX_COUNT) / ADC_MAX_VALUE;
+        pwm_val = (adc_value1 * MAX_COUNT) / ADC_MAX_VALUE;
 
         // Ajusta el ciclo de trabajo del PWM en función del valor del ADC
         timer_set_oc_value(TIM4, TIM_OC2, pwm_val);
 
-        usart_send_value(adc_value);  // Envía el valor del ADC por el puerto serial
+        usart_send_value(adc_value1);  // Envía el valor del ADC por el puerto serial
+
+        adc_value2 = read_adc(ADC_CHANNEL1);
+
+        if (adc_value2 > UMBRAL) // Verifica si la lectura de A1 supera el UMBRAL
+        {
+            gpio_clear(GPIOC, GPIO13);  // Enciende el LED (PC13 en bajo)
+        }
+        else
+        {
+            gpio_set(GPIOC, GPIO13);    // Apaga el LED (PC13 en alto)
+        }
 
         delay_ms(100); // Pausa entre actualizaciones del PWM
     }
@@ -169,6 +197,6 @@ void tim2_isr(void)
     if (timer_get_flag(TIM2, TIM_SR_UIF)) // Verifica si ocurrió una actualización
     {
         timer_clear_flag(TIM2, TIM_SR_UIF); // Limpia la bandera de interrupción
-        adc_value = read_adc();
+        adc_value1 = read_adc(ADC_CHANNEL0);
     }
 }
