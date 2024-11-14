@@ -43,8 +43,10 @@
 *.pdb
 
 #platformio
-*.checksum
-*.json
+.pio/
+.vscode/
+.idea/
+.platformio/
 
 # Kernel Module Compile Results
 *.mod*
@@ -54,7 +56,3 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
-.vscode/c_cpp_properties.json
-.vscode/launch.json
-.pio/build/bluepill_f103c8/idedata.json
-.pio/build/project.checksum
