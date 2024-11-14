@@ -1,43 +1,78 @@
 /**
- * En este programa se logra leer el valor analógico dado por un potenciometro conectado al pin A0, 
- * y es transmitido por UART a la computadora.
- * Si el valor supera un umbral se enciende el led pc13.
- * Se debe tener en cuenta que para poder hacer lectura del puerto y poder ver los valores del adc, es necesario:
- * 1. Agregar las siguientes líneas en platformio.ini:
- * monitor_speed = 9600
- * monitor_filters = direct
- * 2. Abrir la terminal y ejecutar el siguiente comando: lsof /dev/ttyUSB0
- * 3. Terminar los procesos con: kill -9 xxxxxxx
- * 4. Abrir la lectura del puerto nuevamente con: kill -9 23456
+ * En este código se controla la señal PWM que sale por el pin B7 mediante la señal analógica
+ * leída por el pin A0.
+ * El timer 2 interrumpe cada 1 segundo para realizar la conversión por ADC.
+ * Los valores leídos por el ADC son cargados a la computadora mediante UART.
+ * A su vez la señal PWM se encarga de manejar el brillo de un led.
+ * Y podemos observar que para valores bajos de la lectura del ADC la señal PWM tiene un duty cycle grande,
+ * mientras que para valores grandes de la lectura del ADC la señal PWM tiene un duty cycle pequeño.
  */
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
+#include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/adc.h>
+#include <libopencm3/cm3/systick.h>
+#include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/usart.h>
 
-void systemInit(void) {
-    rcc_clock_setup_in_hse_8mhz_out_72mhz();    // Configuración del reloj a 72 MHz
-    rcc_periph_clock_enable(RCC_GPIOC);         // Habilita GPIOC para el LED
-    rcc_periph_clock_enable(RCC_ADC1);          // Habilita el ADC1
-    rcc_periph_clock_enable(RCC_USART1);        // Habilita USART1
-    rcc_periph_clock_enable(RCC_GPIOA);         // Habilita GPIOA para USART
+#define MAX_COUNT 10000     // Máximo valor del PWM
+#define ADC_MAX_VALUE 4095  // Valor máximo de 12 bits para el ADC
+
+volatile uint32_t millis;
+volatile uint16_t adc_value = 0; // Valor leído del ADC
+
+/**
+ * @brief Delay bloqueante utilizando el SysTick
+ * 
+ * @param ms duración de la demora
+ */
+void delay_ms(uint32_t ms)
+{
+    uint32_t lm = millis;
+    while ((millis - lm) < ms);
 }
 
-void configure_gpio(void) {
-    gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13); // Configura el LED en PC13
+/**
+ * @brief Configuración del ADC en el canal A0.
+ */
+void configure_adc(void)
+{
+    rcc_periph_clock_enable(RCC_ADC1);       // Habilita el reloj para el ADC1
+    adc_power_off(ADC1);                     // Apaga el ADC para configurarlo
+    adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_1DOT5CYC); // Configura el tiempo de muestreo
+    adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0); // Selecciona el canal 0 para el ADC (A0)
+    adc_power_on(ADC1);                      // Enciende el ADC
+    adc_reset_calibration(ADC1);             // Reinicia la calibración
+    adc_calibrate(ADC1);                     // Calibra el ADC
 }
 
-void configure_adc(void) {
-    adc_power_off(ADC1);
-    adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_239DOT5CYC); // Tiempo de muestreo
-    adc_power_on(ADC1);
+/**
+ * @brief Configuración del Timer 2 para interrumpir cada 1 segundo.
+ */
+void configure_timer2(void)
+{
+    rcc_periph_clock_enable(RCC_TIM2); // Habilita el reloj para el Timer 2
+    timer_set_prescaler(TIM2, 7200 - 1); // Divide la frecuencia (72 MHz / 7200 = 10 kHz)
+    timer_set_period(TIM2, 10000 - 1);   // Cuenta hasta 10000 (1 Hz o 1 segundo)
+    timer_enable_irq(TIM2, TIM_DIER_UIE); // Habilita interrupción por actualización
+    nvic_enable_irq(NVIC_TIM2_IRQ);       // Activa la interrupción en el NVIC
+    timer_enable_counter(TIM2);           // Activa el contador
+}
 
-    // Calibración del ADC
-    adc_reset_calibration(ADC1);
-    adc_calibrate(ADC1);
+/**
+ * @brief Lee el valor actual del ADC en el canal 0.
+ * @return Valor del ADC de 12 bits (0 a 4095).
+ */
+uint16_t read_adc(void)
+{
+    adc_start_conversion_direct(ADC1);       // Inicia la conversión
+    while (!adc_eoc(ADC1));                  // Espera a que termine la conversión
+    return adc_read_regular(ADC1);           // Retorna el valor convertido
 }
 
 void configure_usart(void) {
+    rcc_periph_clock_enable(RCC_USART1);        // Habilita USART1
+    rcc_periph_clock_enable(RCC_GPIOA);         // Habilita GPIOA para USART
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
     usart_set_baudrate(USART1, 9600);
     usart_set_databits(USART1, 8);
@@ -48,12 +83,6 @@ void configure_usart(void) {
     usart_enable(USART1);
 }
 
-uint16_t read_adc(void) {
-    adc_start_conversion_direct(ADC1);           // Inicia la conversión
-    while (!adc_eoc(ADC1));                      // Espera a que la conversión termine
-    return adc_read_regular(ADC1);               // Lee el valor convertido
-}
-
 void usart_send_value(uint16_t value) {
     char buffer[10];
     int len = snprintf(buffer, sizeof(buffer), "%u\n", value); // Convierte el valor a cadena
@@ -62,22 +91,84 @@ void usart_send_value(uint16_t value) {
     }
 }
 
-int main(void) {
-    systemInit();
-    configure_gpio();
+int main()
+{
+    // CPU = 72Mhz; APB1 = 36Mhz; APB2 = 72Mhz
+    rcc_clock_setup_in_hse_8mhz_out_72mhz();
+
+    /* Configuración del Systick para interrupción cada 1ms */
+    systick_set_clocksource(STK_CSR_CLKSOURCE_AHB_DIV8);
+    systick_set_reload(8999);
+    systick_interrupt_enable();
+    systick_counter_enable();
+
+    /* Configuración del GPIOB y los pines */
+    rcc_periph_clock_enable(RCC_GPIOB);
+    gpio_set_mode(
+        GPIOB,                          // Puerto correspondiente
+        GPIO_MODE_OUTPUT_2_MHZ,         // Máxima velocidad de switcheo
+        GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, // Función alternativa
+        GPIO7);                         // PB7 para el canal de PWM
+
+    /* Configuración del TIM4 para PWM centrado */
+    rcc_periph_clock_enable(RCC_TIM4);
+    timer_set_mode(
+        TIM4,                 // Timer general 4
+        TIM_CR1_CKD_CK_INT,   // Clock interno como fuente
+        TIM_CR1_CMS_CENTER_1, // Modo centrado
+        TIM_CR1_DIR_UP);      // Dirección del conteo hacia arriba
+
+    timer_set_period(TIM4, MAX_COUNT - 1); // 72M/2/10000 = 3,6kHz
+
+    // Configura el canal PWM para el LED en PB7
+    timer_set_oc_mode(TIM4, TIM_OC2, TIM_OCM_PWM2); // PWM2: activo bajo
+    timer_enable_oc_output(TIM4, TIM_OC2);          // Habilitar salida OC2
+
+    // Activa el contador del timer
+    timer_enable_counter(TIM4);
+
+    // Configura el ADC para el canal A0
     configure_adc();
+
+    // Configura el Timer 2 para interrupción cada 1 segundo
+    configure_timer2();
+
     configure_usart();
 
-    while (1) {
-        uint16_t adc_value = read_adc();
+    uint16_t pwm_val = 0;
+
+    while (true)
+    {
+        // Escala el valor del ADC al rango del PWM
+        pwm_val = (adc_value * MAX_COUNT) / ADC_MAX_VALUE;
+
+        // Ajusta el ciclo de trabajo del PWM en función del valor del ADC
+        timer_set_oc_value(TIM4, TIM_OC2, pwm_val);
+
         usart_send_value(adc_value);  // Envía el valor del ADC por el puerto serial
 
-        if (adc_value > 2048) {
-            gpio_set(GPIOC, GPIO13);   // Enciende LED si es mayor al umbral
-        } else {
-            gpio_clear(GPIOC, GPIO13); // Apaga LED si es menor al umbral
-        }
+        delay_ms(100); // Pausa entre actualizaciones del PWM
     }
 
     return 0;
+}
+
+/**
+ * @brief Sub-Rutina de interrupción del SysTick (cada 1ms)
+ */
+void sys_tick_handler(void)
+{
+    millis++; // Incrementa el contador de millis
+}
+
+/**
+ * @brief Sub-Rutina de interrupción del Timer 2 (cada 1 segundo)
+ */
+void tim2_isr(void)
+{
+    if (timer_get_flag(TIM2, TIM_SR_UIF)) // Verifica si ocurrió una actualización
+    {
+        timer_clear_flag(TIM2, TIM_SR_UIF); // Limpia la bandera de interrupción
+        adc_value = read_adc();
+    }
 }
