@@ -55,4 +55,3 @@ dkms.conf
 .vscode/
 .idea/
 .platformio/
-platformio.ini
