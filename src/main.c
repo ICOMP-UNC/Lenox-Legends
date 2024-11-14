@@ -11,6 +11,12 @@
 #define LCD_ENABLE    0x04
 #define LCD_RS        0x01
 
+
+void delay_ms(uint32_t ms){
+    for(int i=0; i<ms*8000; i++){
+        __asm__("nop");
+    }
+}
 void i2c_write(uint8_t addr, uint8_t data) {
     i2c_transfer7(I2C_BUS, addr, &data, 1, NULL, 0);
 }
@@ -58,19 +64,28 @@ void lcd_init(void) {
     i2c_set_ccr(I2C_BUS, 180);                   // Calculado para 100 kHz con 36 MHz de reloj
     i2c_set_trise(I2C_BUS, 37);                  // Tiempo de subida para 100 kHz en 36 MHz
     i2c_peripheral_enable(I2C_BUS);              // Activa I2C
-
+    delay_ms(5);
     // Secuencia de inicialización del LCD
-    lcd_send_nibble(0x03, 0); // Inicio en modo de 8 bits
+    lcd_send_nibble(0x03, 0); // Inicio en modo de 8 bits7
+    delay_ms(5);
     lcd_send_nibble(0x03, 0);
+    delay_ms(5);
     lcd_send_nibble(0x03, 0);
+    delay_ms(5);
     lcd_send_nibble(0x02, 0); // Cambia a modo de 4 bits
+    delay_ms(5);
 
     // Configuración del LCD en modo 4 bits, 2 líneas, y texto de 5x8 puntos
     lcd_command(0x28); // Modo de 4 bits, 2 líneas
+    delay_ms(5);
     lcd_command(0x08); // Apagar display
+    delay_ms(5);
     lcd_command(0x01); // Limpiar display
+    delay_ms(5);
     lcd_command(0x06); // Configuración de entrada
+    delay_ms(5);
     lcd_command(0x0C); // Encender display, sin cursor
+    delay_ms(5);
 }
 
 void lcd_set_cursor(uint8_t row, uint8_t col) {
@@ -89,11 +104,15 @@ int main(void) {
     rcc_clock_setup_in_hse_8mhz_out_72mhz(); // Configura el sistema para 72 MHz
     lcd_init();
 
-    lcd_set_cursor(0, 0);
+    
+
+    while(1){
+        lcd_set_cursor(0, 0);
     lcd_print("Hello, STM32!");
 
     lcd_set_cursor(1, 0);
     lcd_print("I2C LCD 16x2");
+    }
 
     while (1);
 }
