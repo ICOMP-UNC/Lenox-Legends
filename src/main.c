@@ -15,6 +15,7 @@
 volatile uint16_t temperatura=0;
 volatile uint16_t porcentajeBateria=0;
 uint8_t modo_sistema=0;
+uint16_t sensor_movimiento=0;
 
 char buffer_temp_bateria[32];
 char buffer_modo[32];
