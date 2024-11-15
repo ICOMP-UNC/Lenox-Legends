@@ -123,7 +123,7 @@ int main()
         GPIOB,                          // Puerto correspondiente
         GPIO_MODE_OUTPUT_2_MHZ,         // Máxima velocidad de switcheo
         GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, // Función alternativa
-        GPIO7);                         // PB7 para el canal de PWM
+        GPIO9);                         // PB7 para el canal de PWM
 
     /* Configuración del TIM4 para PWM centrado */
     rcc_periph_clock_enable(RCC_TIM4);
@@ -136,8 +136,8 @@ int main()
     timer_set_period(TIM4, MAX_COUNT - 1); // 72M/2/10000 = 3,6kHz
 
     // Configura el canal PWM para el LED en PB7
-    timer_set_oc_mode(TIM4, TIM_OC2, TIM_OCM_PWM2); // PWM2: activo bajo
-    timer_enable_oc_output(TIM4, TIM_OC2);          // Habilitar salida OC2
+    timer_set_oc_mode(TIM4, TIM_OC4, TIM_OCM_PWM1); // PWM1: activo alto
+    timer_enable_oc_output(TIM4, TIM_OC4);          // Habilitar salida OC2
 
     // Activa el contador del timer
     timer_enable_counter(TIM4);
@@ -160,7 +160,7 @@ int main()
         pwm_val = (adc_value1 * MAX_COUNT) / ADC_MAX_VALUE;
 
         // Ajusta el ciclo de trabajo del PWM en función del valor del ADC
-        timer_set_oc_value(TIM4, TIM_OC2, pwm_val);
+        timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
 
         usart_send_value(adc_value1);  // Envía el valor del ADC por el puerto serial
 
@@ -175,7 +175,7 @@ int main()
             gpio_set(GPIOC, GPIO13);    // Apaga el LED (PC13 en alto)
         }
 
-        delay_ms(100); // Pausa entre actualizaciones del PWM
+      //  delay_ms(100); // Pausa entre actualizaciones del PWM
     }
 
     return 0;
@@ -200,3 +200,11 @@ void tim2_isr(void)
         adc_value1 = read_adc(ADC_CHANNEL0);
     }
 }
+
+
+
+
+
+
+
+
