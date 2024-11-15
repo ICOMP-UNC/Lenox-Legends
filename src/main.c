@@ -75,7 +75,7 @@ static void task_i2c(void *args __attribute__((unused)))
 int main(void)
 {
     rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
-
+    configure_pins();
     lcd_init();
 
     // ENCENDEMOS el led
