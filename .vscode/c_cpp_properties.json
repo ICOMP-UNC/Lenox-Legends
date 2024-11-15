@@ -8,23 +8,23 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/include",
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/src",
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/lib/rtos",
-                "C:/Users/frank/.platformio/packages/framework-libopencm3",
-                "C:/Users/frank/.platformio/packages/framework-libopencm3/include",
-                "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/libdeps/bluepill_f103c8/PlatformIO-FreeRTOS",
+                "/home/mauricho/Documents/LabsED3/Lenox-Legends/include",
+                "/home/mauricho/Documents/LabsED3/Lenox-Legends/src",
+                "/home/mauricho/Documents/LabsED3/Lenox-Legends/lib/rtos",
+                "/home/mauricho/.platformio/packages/framework-libopencm3",
+                "/home/mauricho/.platformio/packages/framework-libopencm3/include",
+                "/home/mauricho/Documents/LabsED3/Lenox-Legends/.pio/libdeps/bluepill_f103c8/Unity/src",
                 ""
             ],
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/include",
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/src",
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/lib/rtos",
-                    "C:/Users/frank/.platformio/packages/framework-libopencm3",
-                    "C:/Users/frank/.platformio/packages/framework-libopencm3/include",
-                    "c:/Users/frank/OneDrive/Escritorio/Electronica Digital III/TP FINAL/Lenox-Legends/.pio/libdeps/bluepill_f103c8/PlatformIO-FreeRTOS",
+                    "/home/mauricho/Documents/LabsED3/Lenox-Legends/include",
+                    "/home/mauricho/Documents/LabsED3/Lenox-Legends/src",
+                    "/home/mauricho/Documents/LabsED3/Lenox-Legends/lib/rtos",
+                    "/home/mauricho/.platformio/packages/framework-libopencm3",
+                    "/home/mauricho/.platformio/packages/framework-libopencm3/include",
+                    "/home/mauricho/Documents/LabsED3/Lenox-Legends/.pio/libdeps/bluepill_f103c8/Unity/src",
                     ""
                 ]
             },
@@ -35,7 +35,7 @@
                 "F_CPU=72000000L",
                 ""
             ],
-            "compilerPath": "C:/Users/frank/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gcc.exe",
+            "compilerPath": "/home/mauricho/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gcc",
             "compilerArgs": [
                 "-mthumb",
                 "-mcpu=cortex-m3",
