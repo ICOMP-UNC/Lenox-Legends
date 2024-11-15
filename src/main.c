@@ -1,3 +1,6 @@
+#include "FreeRTOS.h"
+#include "task.h"
+#include <stdio.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/i2c.h>
@@ -7,6 +10,15 @@
 
 //Definiciones de pins
 //TO DO: Agregar definiciones de los pines
+
+//variables Globales
+volatile uint16_t temperatura=0;
+volatile uint16_t porcentajeBateria=0;
+uint8_t modo_sistema=0;
+
+char buffer_temp_bateria[32];
+char buffer_modo[32];
+
 
 #define tskLOW_PRIORITY ((UBaseType_t)tskIDLE_PRIORITY+2)
 
@@ -25,6 +37,27 @@ static void task1(void *args __attribute__((unused))){
     }
 }
 
+static void task_i2c(void *args __attribute__((unused))){
+    while(true){
+        temperatura++;
+        porcentajeBateria++;
+        modo_sistema=0;
+        sprintf(buffer_temp_bateria,"Temperatura: %d",temperatura);
+        if(modo_sistema==0){
+            sprintf(buffer_modo,"Modo: Auto",modo_sistema);
+        }
+        else{
+            sprintf(buffer_modo,"Modo: Manual",modo_sistema);
+        }
+        lcd_set_cursor(0, 0);
+        lcd_print(buffer_temp_bateria);
+        lcd_set_cursor(1, 0);
+        lcd_print(buffer_modo);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+
 int main(void){
     rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
 
@@ -39,25 +72,14 @@ int main(void){
 
     //creamos las tareas
     xTaskCreate(task1,"LedSwitching",configMINIMAL_STACK_SIZE,NULL,tskLOW_PRIORITY,NULL);
+    xTaskCreate(task_i2c,"I2C",configMINIMAL_STACK_SIZE,NULL,tskLOW_PRIORITY,NULL);
 
     //iniciamos todas las tareas
     vTaskStartScheduler();
   
-    volatile int contador=-1;
-    char buffer[16];
+    
 
     while(1){
-        contador++;
-        if(contador==5){
-            lcd_clear();
-            sprintf(buffer, "PRUE", contador);
-        }
-        else{
-            lcd_clear();
-            sprintf(buffer, "Contador: %d", contador);
-        }
-        lcd_set_cursor(0, 0);
-        lcd_print(buffer);
-        delay_ms(1000);
+        
     }
 }
