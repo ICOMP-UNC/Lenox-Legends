@@ -67,6 +67,8 @@ void tim2_isr(void)
     {                                       // Verifica si la interrupción fue generada por el flag de actualización
         timer_clear_flag(TIM2, TIM_SR_UIF); // Limpia el flag de interrupción de actualización
 
+        gpio_toggle(GPIOC, GPIO13);
+
         BaseType_t xHigherPriorityTaskWoken = pdFALSE; //vble auxiliar. no se para que es
         //despertamos a la tarea
         vTaskNotifyGiveFromISR(led_handle, &xHigherPriorityTaskWoken);
