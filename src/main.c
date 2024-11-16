@@ -19,8 +19,7 @@ TaskHandle_t led_handle = NULL;
 #define tskLOW_PRIORITY ((UBaseType_t)tskIDLE_PRIORITY + 2)
 
 // rutina para controlar el stack overflow
-void vApplicationStackOverflowHook(TaskHandle_t pxTask __attribute__((unused)),
-                                   char *pcTaskName __attribute__((unused)))
+void vApplicationStackOverflowHook(TaskHandle_t pxTask __attribute__((unused)), char *pcTaskName __attribute__((unused)))
 {
     while (1)
     {
@@ -51,12 +50,13 @@ void configure_timer(void)
 
 static void task1(void *args __attribute__((unused)))
 {
-    while (true)
+    while (1)
     {
         //Esperar la notificacion desde la ISR del timer
-        if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)>1){
+        if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)>0){
             //notificacion recibida
             gpio_toggle(GPIOC, GPIO13);
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
         
     }
