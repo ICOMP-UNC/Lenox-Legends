@@ -70,7 +70,7 @@ void configure_usart(void)
 void usart_send_labeled_value(const char *label, uint16_t value)
 {
     char buffer[20];
-    int len = snprintf(buffer, sizeof(buffer), "%s:%u\n", label, value); // Formato: "Etiqueta:Valor"
+    int len = snprintf(buffer, sizeof(buffer), ">%s:%u\n", label, value); // Formato: "Etiqueta:Valor"
     for (int i = 0; i < len; i++)
     {
         usart_send_blocking(USART1, buffer[i]); // Envía cada carácter
