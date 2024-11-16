@@ -1,3 +1,13 @@
+/**
+ * En este código la idea es realizar la lectura de datos por medio de dos canales del ADC, el 
+ * canal 0 y 1. Por el canal 0 sensamos la temperatura utilizando el DHT11. Por el canal 1 sensamos
+ * el estado de la batería por medio de un divisor resistivo.
+ * Utilizando la LCD 16x2 conectada, se indica la temperatura, si es modo manual o automático y el estado de la batería.
+ * Y los datos que se capturan serán enviados por UART, y se los gráficara para ver su variación a lo largo del tiempo.
+ * 
+ * Un led indica el estado de la batería, cambiará su brillo por medio de la señal PWM. (A menor brillo batería más descargada).
+ * Otro led es el de la alarma que indica si la temperatura es peligrosa o hay una detección de movimiento.
+ */
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -91,7 +101,6 @@ static void task_i2c(void *args __attribute__((unused)))
 {
     while (true)
     {
-        temperatura++;
         porcentajeBateria++;
         modo_sistema = 0;
         sprintf(buffer_temp_bateria, "Temperatura: %d", temperatura);
