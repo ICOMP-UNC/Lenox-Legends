@@ -1,4 +1,5 @@
 #include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
 #include "task.h"
 #include "semphr.h"
 #include <libopencm3/stm32/gpio.h>
@@ -43,8 +44,9 @@ void configure_timer(void)
 
     timer_enable_irq(TIM2, TIM_DIER_UIE); // Habilita la interrupción de actualización
     nvic_enable_irq(NVIC_TIM2_IRQ);       // Habilita la interrupción del Timer 2 en el NVIC
-
+    nvic_set_priority(NVIC_TIM2_IRQ, 6);
     timer_enable_counter(TIM2); // Inicia el contador del Timer 2
+    
 }
 
 static void task1(void *args __attribute__((unused)))
