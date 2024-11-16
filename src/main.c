@@ -79,6 +79,7 @@ int main(void)
 {
     rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
     configure_pins();
+    configure_timer();
     // ENCENDEMOS el led
     gpio_set(GPIOC, GPIO13);
 
