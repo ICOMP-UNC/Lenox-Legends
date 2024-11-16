@@ -54,11 +54,11 @@ static void task1(void *args __attribute__((unused)))
     while (true)
     {
         //Esperar la notificacion desde la ISR del timer
-        //ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)>1){
+            //notificacion recibida
+            gpio_toggle(GPIOC, GPIO13);
+        }
         
-        //notificacion recibida
-        gpio_toggle(GPIOC, GPIO13);
-        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
