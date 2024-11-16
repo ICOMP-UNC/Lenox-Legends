@@ -31,6 +31,7 @@ void configure_pins()
 {
     rcc_periph_clock_enable(RCC_GPIOC);
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+    gpio_set(GPIOC, GPIO13);
 
     // TODO: Agregar configuración de los pines
 }
@@ -66,8 +67,6 @@ void tim2_isr(void)
     if (timer_get_flag(TIM2, TIM_SR_UIF))
     {                                       // Verifica si la interrupción fue generada por el flag de actualización
         timer_clear_flag(TIM2, TIM_SR_UIF); // Limpia el flag de interrupción de actualización
-
-        gpio_toggle(GPIOC, GPIO13);
 
         BaseType_t xHigherPriorityTaskWoken = pdFALSE; //vble auxiliar. no se para que es
         //despertamos a la tarea
