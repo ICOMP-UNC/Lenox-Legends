@@ -13,8 +13,8 @@
 
 #include "lcd_i2c.h"
 
-//Creamos el taskHundle
-SemaphoreHandle_t xSemaphore=NULL;
+// Creamos el taskHundle
+SemaphoreHandle_t xSemaphore = NULL;
 
 #define tskLOW_PRIORITY ((UBaseType_t)tskIDLE_PRIORITY + 2)
 
@@ -45,16 +45,16 @@ void configure_timer(void)
     nvic_enable_irq(NVIC_TIM2_IRQ);       // Habilita la interrupción del Timer 2 en el NVIC
     nvic_set_priority(NVIC_TIM2_IRQ, 6);
     timer_enable_counter(TIM2); // Inicia el contador del Timer 2
-    
 }
-void configure_semaphore(void){
-    xSemaphore=xSemaphoreCreateBinary();
-    if(xSemaphore==NULL){
+void configure_semaphore(void)
+{
+    xSemaphore = xSemaphoreCreateBinary();
+    if (xSemaphore == NULL)
+    {
         while (1)
         {
             /* code */
         }
-        
     }
 }
 
@@ -62,10 +62,10 @@ static void task1(void *args __attribute__((unused)))
 {
     while (1)
     {
-        if(xSemaphoreTake(xSemaphore, portMAX_DELAY)==pdTRUE){
+        if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE)
+        {
             gpio_toggle(GPIOC, GPIO13);
         }
-        
     }
 }
 
@@ -74,7 +74,9 @@ void tim2_isr(void)
     if (timer_get_flag(TIM2, TIM_SR_UIF))
     {                                       // Verifica si la interrupción fue generada por el flag de actualización
         timer_clear_flag(TIM2, TIM_SR_UIF); // Limpia el flag de interrupción de actualización
-        xSemaphoreGiveFromISR(xSemaphore, NULL);
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGiveFromISR(xSemaphore, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken); // Solo si es necesario un cambio de contexto
     }
 }
 
@@ -90,7 +92,7 @@ int main(void)
     // creamos las tareas
     xTaskCreate(task1, "LedSwitching", configMINIMAL_STACK_SIZE, NULL, tskLOW_PRIORITY, NULL);
 
-    //iniciamos las tareas
+    // iniciamos las tareas
     vTaskStartScheduler();
 
     while (1)
