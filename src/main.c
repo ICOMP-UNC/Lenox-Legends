@@ -28,7 +28,7 @@
  * respecto al LCD de +-1%.
  *
  * En este código se agrego un buzzer que hace un sonido cuando la temperatura
- * es mayor a la umbral.
+ * es mayor a la umbral. Se conecto al pin B8.
  *
  * También se agregó una corrección para poder gráficar los valores leídos.
  * 
