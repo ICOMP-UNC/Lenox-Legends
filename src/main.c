@@ -31,7 +31,12 @@
  * es mayor a la umbral.
  *
  * También se agregó una corrección para poder gráficar los valores leídos.
- *
+ * 
+ * Se coneceta el sensor IR-08H que permite detectar movimiento, y envía una señal digital al 
+ * pin B11. Esta señal es procesada y si se detecta movimiento se enciende el led amarillo conectado
+ * al pin B13.
+ * 
+ * Por lo tanto, ya queda conectado el sensor IR 08H y se envía correctamente mediante UART.
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -56,8 +61,10 @@
 #define ADC_MAX_VALUE 4095 // Valor máximo de 12 bits para el ADC
 #define UMBRAL_TEMP_C 20   // Umbral de temperatura en °C
 
-// Definiciones de pins
-// TO DO: Agregar definiciones de los pines
+// Definiciones de pines
+#define PIN_SENSOR_MOVIMIENTO GPIOB, GPIO11  // B11 para la señal del sensor IR-08H
+#define PIN_LED_AMARILLO GPIOB, GPIO13       // B13 para el LED amarillo
+
 
 // variables Globales
 volatile float temperatura_C = 0, bateria_porcetaje = 0;
@@ -84,14 +91,16 @@ void inicializar_semaforos() {
 }
 
 void configure_pins() {
-  rcc_periph_clock_enable(RCC_GPIOC);
-  gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
-                GPIO13);
+  //rcc_periph_clock_enable(RCC_GPIOA); // Habilitar el reloj para el puerto A
+  //gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO5); // A5 como entrada para el sensor de movimiento
 
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
-  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
-                GPIO8); // Configurar B8 como salida
-  // TODO: Agregar configuración de los pines
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO8); // Configurar B8 como salida
+  gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO11); // Configurar B11 como entrada flotante para el sensor de movimiento
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13); // B13 como salida para el LED amarillo
+
+  rcc_periph_clock_enable(RCC_GPIOC);
+  gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
 }
 
 void configure_usart(void) {
@@ -189,6 +198,22 @@ void configure_pwm(void) {
 //         vTaskDelay(pdMS_TO_TICKS(100));
 //     }
 // }
+
+static void task_sensor_movimiento(void *args __attribute__((unused))) {
+  while (true) {
+    // Leer el valor del sensor de movimiento
+    sensor_movimiento = gpio_get(GPIOB, GPIO11);  // Leer B11
+
+    // Si el sensor detecta movimiento (asumimos que 1 es detección de movimiento)
+    if (sensor_movimiento) {
+      gpio_clear(GPIOB, GPIO13);  // Encender LED amarillo
+    } else {
+      gpio_set(GPIOB, GPIO13);  // Apagar LED amarillo
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(50));  // Esperar 100 ms antes de volver a leer
+  }
+}
 
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
@@ -314,6 +339,9 @@ int main(void) {
 
   // creamos la tarea PWM
   xTaskCreate(task_pwm, "PWM", STACK_SIZE, NULL, tskLOW_PRIORITY, NULL);
+
+  // creamos la tarea ADC
+  xTaskCreate(task_sensor_movimiento, "Sensor", configMINIMAL_STACK_SIZE, NULL, tskLOW_PRIORITY, NULL);
 
   // iniciamos todas las tareas
   vTaskStartScheduler();
