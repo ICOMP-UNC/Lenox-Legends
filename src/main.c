@@ -18,16 +18,20 @@
  * movimiento.
  *
  * La señal PWM sale por el pin B9. Es decir, el led que según su brillo indica
- * el estado de la batería ya estaría configurado. Cuando la temperatura supera
+ * el estado de la batería ya estaría configurado. Y cuando la temperatura supera
  * cierto umbral se enciende el led pc13.
  *
  * Se corrigen las unidades para mostrar en °C los grados sensados y en
  * porcentaje la batería 0-100%. El rango de temperatura será de -20°C a 60°C.
- * 
- * El UART funciona correctamente y podemos ver una pequeña discrepancia con respecto 
- * al LCD de +-1%.
- * 
- * 
+ *
+ * El UART funciona correctamente y podemos ver una pequeña discrepancia con
+ * respecto al LCD de +-1%.
+ *
+ * En este código se agrego un buzzer que hace un sonido cuando la temperatura
+ * es mayor a la umbral.
+ *
+ * También se agregó una corrección para poder gráficar los valores leídos.
+ *
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -84,8 +88,9 @@ void configure_pins() {
   gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
                 GPIO13);
 
-  rcc_periph_clock_enable(RCC_GPIOB);  // Habilitar el reloj para el puerto B
-  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO8);  // Configurar B8 como salida
+  rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
+                GPIO8); // Configurar B8 como salida
   // TODO: Agregar configuración de los pines
 }
 
@@ -112,11 +117,10 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
   }
 }
 
-void alarma(void)
-{
-   gpio_set(GPIOB, GPIO8);  // Enciende el buzzer en B8
-   vTaskDelay(pdMS_TO_TICKS(500));  // Sonido durante 500 ms (ajustable)
-   gpio_clear(GPIOB, GPIO8);  // Apaga el buzzer
+void alarma(void) {
+  gpio_set(GPIOB, GPIO8);         // Enciende el buzzer en B8
+  vTaskDelay(pdMS_TO_TICKS(500)); // Sonido durante 500 ms (ajustable)
+  gpio_clear(GPIOB, GPIO8);       // Apaga el buzzer
 
   /**
    * Otra musiquita
@@ -210,13 +214,13 @@ static void task_i2c(void *args __attribute__((unused))) {
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Enviar la temperatura con un decimal
-    usart_send_labeled_value("A1:", temperatura_C);
+    usart_send_labeled_value("A1", temperatura_C);
 
     // Enviar el porcentaje de batería con un decimal
-    usart_send_labeled_value("A2:", bateria_porcetaje);
+    usart_send_labeled_value("A2", bateria_porcetaje);
 
     // Enviar el valor del sensor de movimiento (por ejemplo, como entero)
-    usart_send_labeled_value("V3:", sensor_movimiento);
+    usart_send_labeled_value("V3", sensor_movimiento);
 
     vTaskDelay(
         pdMS_TO_TICKS(1000)); // Esperar 1 segundo antes de enviar nuevamente
@@ -238,8 +242,10 @@ static void task_adc(void *args __attribute__((unused))) {
     // Convertir el valor del ADC a la temperatura en el rango de -20°C a 60°C
     temperatura_C = ((float)temperatura / 4095.0f) * 80.0f - 20.0f;
 
-    if (temperatura_C > 60.0f) temperatura_C = 60.0f;
-    if (temperatura_C < -20.0f) temperatura_C = 0.0f;
+    if (temperatura_C > 60.0f)
+      temperatura_C = 60.0f;
+    if (temperatura_C < -20.0f)
+      temperatura_C = 0.0f;
 
     adc_disable_scan_mode(
         ADC1); // Asegurar que no queden configuraciones residuales
@@ -252,17 +258,17 @@ static void task_adc(void *args __attribute__((unused))) {
     bateria_porcetaje = (float)porcentajeBateria * (100.0f / 4095.0f);
 
     // Limitar el valor del porcentaje de batería a un máximo de 100%
-    if (bateria_porcetaje > 100.0f) bateria_porcetaje = 100.0f;
-    if (bateria_porcetaje < 0.0f) bateria_porcetaje = 0.0f;
+    if (bateria_porcetaje > 100.0f)
+      bateria_porcetaje = 100.0f;
+    if (bateria_porcetaje < 0.0f)
+      bateria_porcetaje = 0.0f;
 
-    if (temperatura_C < UMBRAL_TEMP_C)
-    {  
+    if (temperatura_C < UMBRAL_TEMP_C) {
       gpio_set(GPIOC, GPIO13);
+    } else {
+      gpio_clear(GPIOC, GPIO13);
       alarma();
     }
-    else
-      gpio_clear(GPIOC, GPIO13);
-
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -279,8 +285,6 @@ static void task_pwm(void *args __attribute__((unused))) {
     timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
   }
 }
-
-
 
 int main(void) {
   rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
