@@ -23,6 +23,11 @@
  *
  * Se corrigen las unidades para mostrar en °C los grados sensados y en
  * porcentaje la batería 0-100%. El rango de temperatura será de -20°C a 60°C.
+ * 
+ * El UART funciona correctamente y podemos ver una pequeña discrepancia con respecto 
+ * al LCD de +-1%.
+ * 
+ * 
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -164,7 +169,7 @@ void configure_pwm(void) {
 
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
-    char buffer_temp_bateria[60];
+    char buffer_temp_bateria[20];
     char buffer_modo[20];
 
     // Usar sprintf para formatear los valores flotantes
@@ -186,13 +191,13 @@ static void task_i2c(void *args __attribute__((unused))) {
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Enviar la temperatura con un decimal
-    usart_send_labeled_value(">A1: %.1f\n", temperatura_C);
+    usart_send_labeled_value("A1:", temperatura_C);
 
     // Enviar el porcentaje de batería con un decimal
-    usart_send_labeled_value(">A2: %.1f\n", bateria_porcetaje);
+    usart_send_labeled_value("A2:", bateria_porcetaje);
 
     // Enviar el valor del sensor de movimiento (por ejemplo, como entero)
-    usart_send_labeled_value(">V3: %d\n", sensor_movimiento);
+    usart_send_labeled_value("V3:", sensor_movimiento);
 
     vTaskDelay(
         pdMS_TO_TICKS(1000)); // Esperar 1 segundo antes de enviar nuevamente
