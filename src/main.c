@@ -6,24 +6,28 @@
  * temperatura, si es modo manual o automático y el estado de la batería. Y los
  * datos que se capturan serán enviados por UART, y se los gráficara para ver su
  * variación a lo largo del tiempo.
- * 
- * Lo comentado anteriormente se esta cumpliendo todo menos los datos obtenidos del 
- * segundo canal, por algún motivo no se logra una independencia completa entre 
- * los canales del ADC. El canal 0 fácilmente recorre los valores de 0 a 4096, pero 
- * el canal 1 como que toma valores +-100 de los que toma el canal 0.
+ *
+ * Lo comentado anteriormente se esta cumpliendo todo menos los datos obtenidos
+ * del segundo canal, por algún motivo no se logra una independencia completa
+ * entre los canales del ADC. El canal 0 fácilmente recorre los valores de 0 a
+ * 4096, pero el canal 1 como que toma valores +-100 de los que toma el canal 0.
  *
  * Un led indica el estado de la batería, cambiará su brillo por medio de la
  * señal PWM. (A menor brillo batería más descargada). Otro led es el de la
  * alarma que indica si la temperatura es peligrosa o hay una detección de
  * movimiento.
+ * 
+ * Para esta otra actividad el problema esta en que la señal PWM sale por el pin B9.
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
+#include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/i2c.h>
 #include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -33,6 +37,8 @@
 #define STACK_SIZE configMINIMAL_STACK_SIZE
 #define tskLOW_PRIORITY ((UBaseType_t)tskIDLE_PRIORITY + 2)
 #define tskLOW_PRIORITY_ADC ((UBaseType_t)tskIDLE_PRIORITY + 3)
+#define MAX_COUNT 10000    // Máximo valor del PWM
+#define ADC_MAX_VALUE 4095 // Valor máximo de 12 bits para el ADC
 
 // Definiciones de pins
 // TO DO: Agregar definiciones de los pines
@@ -98,13 +104,13 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
 void configure_adc(void) {
   // Habilita el reloj para el ADC1
   rcc_periph_clock_enable(RCC_ADC1);
-  
   rcc_periph_clock_enable(RCC_GPIOA);
 
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1);
 
   // Apaga el ADC para configurarlo
   adc_power_off(ADC1);
+
   // Configuro el tiempo de muestreo
   adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_55DOT5CYC);
   adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_55DOT5CYC);
@@ -115,6 +121,31 @@ void configure_adc(void) {
   // Calibro el ADC
   adc_reset_calibration(ADC1);
   adc_calibrate(ADC1);
+}
+
+void configure_pwm(void) {
+  /* Configuración del GPIOB y los pines */
+  rcc_periph_clock_enable(RCC_GPIOB);
+  gpio_set_mode(GPIOB,                          // Puerto correspondiente
+                GPIO_MODE_OUTPUT_2_MHZ,         // Máxima velocidad de switcheo
+                GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, // Función alternativa
+                GPIO9);                         // PB9 para el canal de PWM
+
+  /* Configuración del TIM4 para PWM centrado */
+  rcc_periph_clock_enable(RCC_TIM4);
+  timer_set_mode(TIM4,                 // Timer general 4
+                 TIM_CR1_CKD_CK_INT,   // Clock interno como fuente
+                 TIM_CR1_CMS_CENTER_1, // Modo centrado
+                 TIM_CR1_DIR_UP);      // Dirección del conteo hacia arriba
+
+  timer_set_period(TIM4, MAX_COUNT - 1); // 72M/2/10000 = 3,6kHz
+
+  // Configura el canal PWM para el LED en PB7
+  timer_set_oc_mode(TIM4, TIM_OC4, TIM_OCM_PWM1); // PWM1: activo alto
+  timer_enable_oc_output(TIM4, TIM_OC4);          // Habilitar salida OC2
+
+  // Activa el contador del timer
+  timer_enable_counter(TIM4);
 }
 
 // // asi se crean las tareas
@@ -159,14 +190,16 @@ static void task_uart(void *args __attribute__((unused))) {
 
 static void task_adc(void *args __attribute__((unused))) {
   while (true) {
-    adc_disable_scan_mode(ADC1); // Deshabilitar modo escaneo para una conversión única
+    adc_disable_scan_mode(
+        ADC1); // Deshabilitar modo escaneo para una conversión única
     adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0);
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
       ;
     temperatura = adc_read_regular(ADC1);
 
-    adc_disable_scan_mode(ADC1); // Asegurar que no queden configuraciones residuales
+    adc_disable_scan_mode(
+        ADC1); // Asegurar que no queden configuraciones residuales
     adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL1);
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
@@ -182,17 +215,31 @@ static void task_adc(void *args __attribute__((unused))) {
   }
 }
 
+// Tarea PWM
+static void task_pwm(void *args __attribute__((unused))) {
+  uint16_t pwm_val = 0;
+
+  while (true) {
+    // Escala el valor del ADC al rango del PWM
+    pwm_val = (temperatura * MAX_COUNT) / ADC_MAX_VALUE;
+
+    // Ajusta el ciclo de trabajo del PWM en función del valor del ADC
+    timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
+  }
+}
+
 int main(void) {
   rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
   configure_pins();
   configure_usart();
   configure_adc();
+  configure_pwm();
   lcd_init();
 
   // ENCENDEMOS el led
-    gpio_set(GPIOC, GPIO13);
+  gpio_set(GPIOC, GPIO13);
 
-  //xSemaphoreHandle semaforo_dma = xSemaphoreCreateMutex(); // ?
+  // xSemaphoreHandle semaforo_dma = xSemaphoreCreateMutex(); // ?
 
   // creamos las tareas
   // xTaskCreate(task1, "LedSwitching", configMINIMAL_STACK_SIZE, NULL,
@@ -206,6 +253,9 @@ int main(void) {
 
   // creamos la tarea ADC
   xTaskCreate(task_adc, "ADC", STACK_SIZE, NULL, tskLOW_PRIORITY_ADC, NULL);
+
+  // creamos la tarea PWM
+  xTaskCreate(task_pwm, "PWM", STACK_SIZE, NULL, tskLOW_PRIORITY, NULL);
 
   // iniciamos todas las tareas
   vTaskStartScheduler();
