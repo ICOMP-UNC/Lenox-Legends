@@ -21,8 +21,8 @@
  * el estado de la batería ya estaría configurado. Cuando la temperatura supera
  * cierto umbral se enciende el led pc13.
  *
- *
- *
+ * Se corrigen las unidades para mostrar en °C los grados sensados y en
+ * porcentaje la batería 0-100%. El rango de temperatura será de -20°C a 60°C.
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -164,13 +164,16 @@ void configure_pwm(void) {
 
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
-    char buffer_temp_bateria[80];
+    char buffer_temp_bateria[60];
     char buffer_modo[20];
 
     // Usar sprintf para formatear los valores flotantes
-    sprintf(buffer_temp_bateria, "Temp: %d Bat: %d", (int)temperatura_C, (int)porcentajeBateria);  // Convertir la temperatura a cadena
+    sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", (int)temperatura_C,
+            (int)bateria_porcetaje); // Convertir la temperatura a cadena
 
-   sprintf(buffer_modo, "Modo: %s", (modo_sistema == 0) ? "Auto" : "Manual");  // Convertir el modo a cadena
+    sprintf(buffer_modo, "Modo: %s",
+            (modo_sistema == 0) ? "Auto"
+                                : "Manual"); // Convertir el modo a cadena
 
     lcd_set_cursor(0, 0);
     lcd_print(buffer_temp_bateria);
@@ -196,6 +199,9 @@ static void task_uart(void *args __attribute__((unused))) {
   }
 }
 
+/**
+ * Según el UART los dos ADC estarían mostrandose correctamente.
+ */
 static void task_adc(void *args __attribute__((unused))) {
   while (true) {
     adc_disable_scan_mode(
@@ -205,7 +211,11 @@ static void task_adc(void *args __attribute__((unused))) {
     while (!adc_eoc(ADC1))
       ;
     temperatura = adc_read_regular(ADC1);
-    temperatura_C = (float)temperatura * (3.3f / 4095.0f) * 100.0f;
+    // Convertir el valor del ADC a la temperatura en el rango de -20°C a 60°C
+    temperatura_C = ((float)temperatura / 4095.0f) * 80.0f - 20.0f;
+
+    if (temperatura_C > 60.0f) temperatura_C = 60.0f;
+    if (temperatura_C < -20.0f) temperatura_C = 0.0f;
 
     adc_disable_scan_mode(
         ADC1); // Asegurar que no queden configuraciones residuales
@@ -214,7 +224,12 @@ static void task_adc(void *args __attribute__((unused))) {
     while (!adc_eoc(ADC1))
       ;
     porcentajeBateria = adc_read_regular(ADC1);
+    // Ajuste del porcentaje de batería, asegurando que no supere el 100%
     bateria_porcetaje = (float)porcentajeBateria * (100.0f / 4095.0f);
+
+    // Limitar el valor del porcentaje de batería a un máximo de 100%
+    if (bateria_porcetaje > 100.0f) bateria_porcetaje = 100.0f;
+    if (bateria_porcetaje < 0.0f) bateria_porcetaje = 0.0f;
 
     if (temperatura_C < UMBRAL_TEMP_C)
       gpio_set(GPIOC, GPIO13);
