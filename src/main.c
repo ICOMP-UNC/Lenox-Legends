@@ -16,13 +16,13 @@
  * señal PWM. (A menor brillo batería más descargada). Otro led es el de la
  * alarma que indica si la temperatura es peligrosa o hay una detección de
  * movimiento.
- * 
- * La señal PWM sale por el pin B9. Es decir, el led que según su brillo indica el 
- * estado de la batería ya estaría configurado.
- * Cuando la temperatura supera cierto umbral se enciende el led pc13.
- * 
- * 
- * 
+ *
+ * La señal PWM sale por el pin B9. Es decir, el led que según su brillo indica
+ * el estado de la batería ya estaría configurado. Cuando la temperatura supera
+ * cierto umbral se enciende el led pc13.
+ *
+ *
+ *
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -36,6 +36,7 @@
 #include <libopencm3/stm32/usart.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h> // Incluir para usar strlen
 
 #include "lcd_i2c.h"
 
@@ -44,14 +45,14 @@
 #define tskLOW_PRIORITY_ADC ((UBaseType_t)tskIDLE_PRIORITY + 3)
 #define MAX_COUNT 10000    // Máximo valor del PWM
 #define ADC_MAX_VALUE 4095 // Valor máximo de 12 bits para el ADC
-#define UMBRAL_TEMP 2048
+#define UMBRAL_TEMP_C 20   // Umbral de temperatura en °C
 
 // Definiciones de pins
 // TO DO: Agregar definiciones de los pines
 
 // variables Globales
-volatile uint16_t temperatura = 0;
-volatile uint16_t porcentajeBateria = 0;
+volatile float temperatura_C = 0, bateria_porcetaje = 0;
+volatile uint16_t temperatura = 0, porcentajeBateria = 0; // Valores RAW
 uint8_t modo_sistema = 0;
 uint16_t sensor_movimiento = 0;
 
@@ -59,9 +60,6 @@ uint16_t sensor_movimiento = 0;
 xSemaphoreHandle temp_semaforo = 0;
 xSemaphoreHandle bateria_semaforo = 0;
 xSemaphoreHandle movimiento_semaforo = 0;
-
-char buffer_temp_bateria[32];
-char buffer_modo[32];
 
 // rutina para controlar el stack overflow
 void vApplicationStackOverflowHook(TaskHandle_t pxTask __attribute__((unused)),
@@ -166,13 +164,14 @@ void configure_pwm(void) {
 
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
-    sprintf(buffer_temp_bateria, "Temp: %d Bat: %d", temperatura,
-            porcentajeBateria);
-    if (modo_sistema == 0) {
-      sprintf(buffer_modo, "Modo: Auto", modo_sistema);
-    } else {
-      sprintf(buffer_modo, "Modo: Manual", modo_sistema);
-    }
+    char buffer_temp_bateria[80];
+    char buffer_modo[20];
+
+    // Usar sprintf para formatear los valores flotantes
+    sprintf(buffer_temp_bateria, "Temp: %d Bat: %d", (int)temperatura_C, (int)porcentajeBateria);  // Convertir la temperatura a cadena
+
+   sprintf(buffer_modo, "Modo: %s", (modo_sistema == 0) ? "Auto" : "Manual");  // Convertir el modo a cadena
+
     lcd_set_cursor(0, 0);
     lcd_print(buffer_temp_bateria);
     lcd_set_cursor(1, 0);
@@ -183,14 +182,17 @@ static void task_i2c(void *args __attribute__((unused))) {
 
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
-    // Envía las variables etiquetadas por UART
-    usart_send_labeled_value("A1",
-                             temperatura); // Envía adc_value1 con etiqueta "A1"
-    usart_send_labeled_value(
-        "A2", porcentajeBateria); // Envía adc_value2 con etiqueta "A2"
-    usart_send_labeled_value(
-        "V3", sensor_movimiento); // Envía variable3_uart con etiqueta "V3"
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // Enviar la temperatura con un decimal
+    usart_send_labeled_value(">A1: %.1f\n", temperatura_C);
+
+    // Enviar el porcentaje de batería con un decimal
+    usart_send_labeled_value(">A2: %.1f\n", bateria_porcetaje);
+
+    // Enviar el valor del sensor de movimiento (por ejemplo, como entero)
+    usart_send_labeled_value(">V3: %d\n", sensor_movimiento);
+
+    vTaskDelay(
+        pdMS_TO_TICKS(1000)); // Esperar 1 segundo antes de enviar nuevamente
   }
 }
 
@@ -203,6 +205,7 @@ static void task_adc(void *args __attribute__((unused))) {
     while (!adc_eoc(ADC1))
       ;
     temperatura = adc_read_regular(ADC1);
+    temperatura_C = (float)temperatura * (3.3f / 4095.0f) * 100.0f;
 
     adc_disable_scan_mode(
         ADC1); // Asegurar que no queden configuraciones residuales
@@ -211,8 +214,9 @@ static void task_adc(void *args __attribute__((unused))) {
     while (!adc_eoc(ADC1))
       ;
     porcentajeBateria = adc_read_regular(ADC1);
+    bateria_porcetaje = (float)porcentajeBateria * (100.0f / 4095.0f);
 
-    if (temperatura < UMBRAL_TEMP)
+    if (temperatura_C < UMBRAL_TEMP_C)
       gpio_set(GPIOC, GPIO13);
     else
       gpio_clear(GPIOC, GPIO13);
