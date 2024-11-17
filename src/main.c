@@ -57,7 +57,7 @@ static void task1(void *args __attribute__((unused)))
             //notificacion recibida
             gpio_toggle(GPIOC, GPIO13);
         }
-        
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
