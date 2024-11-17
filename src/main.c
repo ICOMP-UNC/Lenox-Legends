@@ -17,7 +17,12 @@
  * alarma que indica si la temperatura es peligrosa o hay una detección de
  * movimiento.
  * 
- * Para esta otra actividad el problema esta en que la señal PWM sale por el pin B9.
+ * La señal PWM sale por el pin B9. Es decir, el led que según su brillo indica el 
+ * estado de la batería ya estaría configurado.
+ * Cuando la temperatura supera cierto umbral se enciende el led pc13.
+ * 
+ * 
+ * 
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -39,6 +44,7 @@
 #define tskLOW_PRIORITY_ADC ((UBaseType_t)tskIDLE_PRIORITY + 3)
 #define MAX_COUNT 10000    // Máximo valor del PWM
 #define ADC_MAX_VALUE 4095 // Valor máximo de 12 bits para el ADC
+#define UMBRAL_TEMP 2048
 
 // Definiciones de pins
 // TO DO: Agregar definiciones de los pines
@@ -206,7 +212,7 @@ static void task_adc(void *args __attribute__((unused))) {
       ;
     porcentajeBateria = adc_read_regular(ADC1);
 
-    if (temperatura > 2048)
+    if (temperatura < UMBRAL_TEMP)
       gpio_set(GPIOC, GPIO13);
     else
       gpio_clear(GPIOC, GPIO13);
