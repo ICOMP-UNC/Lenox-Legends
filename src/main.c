@@ -84,6 +84,8 @@ void configure_pins() {
   gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
                 GPIO13);
 
+  rcc_periph_clock_enable(RCC_GPIOB);  // Habilitar el reloj para el puerto B
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO8);  // Configurar B8 como salida
   // TODO: Agregar configuración de los pines
 }
 
@@ -108,6 +110,23 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
   for (int i = 0; i < len; i++) {
     usart_send_blocking(USART1, buffer[i]); // Envía cada carácter
   }
+}
+
+void alarma(void)
+{
+   gpio_set(GPIOB, GPIO8);  // Enciende el buzzer en B8
+   vTaskDelay(pdMS_TO_TICKS(500));  // Sonido durante 500 ms (ajustable)
+   gpio_clear(GPIOB, GPIO8);  // Apaga el buzzer
+
+  /**
+   * Otra musiquita
+   */
+  //  for (int i = 0; i < 5; i++) {  // Emitir 5 ciclos de sonido
+  //   gpio_set(GPIOB, GPIO8);  // Activar el buzzer (pin B8 en alto)
+  //   vTaskDelay(pdMS_TO_TICKS(200));  // Esperar 200 ms
+  //   gpio_clear(GPIOB, GPIO8);  // Desactivar el buzzer (pin B8 en bajo)
+  //   vTaskDelay(pdMS_TO_TICKS(200));  // Esperar 200 ms
+  // }
 }
 
 void configure_adc(void) {
@@ -237,7 +256,10 @@ static void task_adc(void *args __attribute__((unused))) {
     if (bateria_porcetaje < 0.0f) bateria_porcetaje = 0.0f;
 
     if (temperatura_C < UMBRAL_TEMP_C)
+    {  
       gpio_set(GPIOC, GPIO13);
+      alarma();
+    }
     else
       gpio_clear(GPIOC, GPIO13);
 
@@ -257,6 +279,8 @@ static void task_pwm(void *args __attribute__((unused))) {
     timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
   }
 }
+
+
 
 int main(void) {
   rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
@@ -292,4 +316,6 @@ int main(void) {
 
   while (1) {
   }
+
+  return 0;
 }
