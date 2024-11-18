@@ -1,7 +1,7 @@
 /**
  * En este código la idea es realizar la lectura de datos por medio de dos
  * canales del ADC, el canal 0 y 1. Por el canal 0 sensamos la temperatura
- * utilizando el DHT11. Por el canal 1 sensamos el estado de la batería por
+ * utilizando el lm35. Por el canal 1 sensamos el estado de la batería por
  * medio de un divisor resistivo. Utilizando la LCD 16x2 conectada, se indica la
  * temperatura, si es modo manual o automático y el estado de la batería. Y los
  * datos que se capturan serán enviados por UART, y se los gráficara para ver su
@@ -263,7 +263,7 @@ static void task_adc(void *args __attribute__((unused))) {
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
       ;
-    temperatura = adc_read_regular(ADC1);
+    temperatura = adc_read_regular(ADC1) & 0xFFF;
     // Convertir el valor del ADC a la temperatura en el rango de -20°C a 60°C
     temperatura_C = ((float)temperatura / 4095.0f) * 80.0f - 20.0f;
 
@@ -278,7 +278,7 @@ static void task_adc(void *args __attribute__((unused))) {
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
       ;
-    porcentajeBateria = adc_read_regular(ADC1);
+    porcentajeBateria = adc_read_regular(ADC1) & 0xFFF;
     // Ajuste del porcentaje de batería, asegurando que no supere el 100%
     bateria_porcetaje = (float)porcentajeBateria * (100.0f / 4095.0f);
 
