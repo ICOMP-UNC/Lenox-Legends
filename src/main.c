@@ -54,7 +54,6 @@
 #include <stdio.h>
 #include <semphr.h>
 #include <string.h> // Incluir para usar strlen
-
 #include "lcd_i2c.h"
 
 #define STACK_SIZE configMINIMAL_STACK_SIZE
@@ -107,24 +106,31 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     while (1) {}
 }
 
+/**
+ * En esta función se realiza todas las configuraciones de pines que vayamos a utilizar.
+ */
 void configure_pins() {
-  //rcc_periph_clock_enable(RCC_GPIOA); // Habilitar el reloj para el puerto A
-  //gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO5); // A5 como entrada para el sensor de movimiento
+  rcc_periph_clock_enable(RCC_GPIOA); // Habilitar el reloj para el puerto A
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1); 
+  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
 
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO8); // Configurar B8 como salida
   gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO11); // Configurar B11 como entrada flotante para el sensor de movimiento
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13); // B13 como salida para el LED amarillo
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO9); // PB9 para el canal de PWM
 
-  rcc_periph_clock_enable(RCC_GPIOC);
-  gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+  rcc_periph_clock_enable(RCC_GPIOC); // Habilitar el reloj para el puerto C
+  gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13); //PC13 led de la placa
 }
 
+/**
+ * En esta función se realiza la configuración del módulo UART.
+ * Se lo configura para trabajar a 9600 baudios.
+ */
 void configure_usart(void) {
   rcc_periph_clock_enable(RCC_USART1); // Habilita USART1
-  rcc_periph_clock_enable(RCC_GPIOA);  // Habilita GPIOA para USART
-  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
-                GPIO_USART1_TX); // Configura PA9 como TX
+  
   usart_set_baudrate(USART1, 9600);
   usart_set_databits(USART1, 8);
   usart_set_stopbits(USART1, USART_STOPBITS_1);
@@ -134,6 +140,13 @@ void configure_usart(void) {
   usart_enable(USART1);
 }
 
+/**
+ * Permite visualizar las valores por pantalla de la transmisión 
+ * por comunicación UART.
+ * 
+ * También se le da el formato adecuado a las variables para poder graficarse
+ * utilizando la extensión Teleplot.
+ */
 void usart_send_labeled_value(const char *label, uint16_t value) {
   char buffer[20];
   int len = snprintf(buffer, sizeof(buffer), ">%s:%u\n", label,
@@ -143,6 +156,9 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
   }
 }
 
+/**
+ * Genera una alarma.
+ */
 void alarma(void) {
   gpio_set(GPIOB, GPIO8);         // Enciende el buzzer en B8
   vTaskDelay(pdMS_TO_TICKS(500)); // Sonido durante 500 ms (ajustable)
@@ -159,12 +175,14 @@ void alarma(void) {
   // }
 }
 
+/**
+ * Configuración del ADC utilizando dos canales.
+ * El canal 0 y 1.
+ */
 void configure_adc(void) {
   // Habilita el reloj para el ADC1
   rcc_periph_clock_enable(RCC_ADC1);
   rcc_periph_clock_enable(RCC_GPIOA);
-
-  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1);
 
   // Apaga el ADC para configurarlo
   adc_power_off(ADC1);
@@ -181,14 +199,11 @@ void configure_adc(void) {
   adc_calibrate(ADC1);
 }
 
+/**
+ * Configuración de la señal PWM, utilizando el timer 4.
+ */
 void configure_pwm(void) {
-  /* Configuración del GPIOB y los pines */
-  rcc_periph_clock_enable(RCC_GPIOB);
-  gpio_set_mode(GPIOB,                          // Puerto correspondiente
-                GPIO_MODE_OUTPUT_2_MHZ,         // Máxima velocidad de switcheo
-                GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, // Función alternativa
-                GPIO9);                         // PB9 para el canal de PWM
-
+  
   /* Configuración del TIM4 para PWM centrado */
   rcc_periph_clock_enable(RCC_TIM4);
   timer_set_mode(TIM4,                 // Timer general 4
@@ -216,6 +231,9 @@ void configure_pwm(void) {
 //     }
 // }
 
+/**
+ * 
+ */
 static void task_sensor_movimiento(void *args __attribute__((unused))) {
   while (true) {
     // Leer el valor del sensor de movimiento
@@ -236,6 +254,11 @@ static void task_sensor_movimiento(void *args __attribute__((unused))) {
   }
 }
 
+/**
+ * Tarea que permite mostrar en la pantalla LCD 16x2 los valores indicados.
+ * En este caso se muestra la temperatura, el nivel de batería, y el modo en que
+ * se encuentra el sistema.
+ */
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     char buffer_temp_bateria[20];
@@ -257,6 +280,10 @@ static void task_i2c(void *args __attribute__((unused))) {
   }
 }
 
+/**
+ * Tarea que lleva a cabo la comunicación UART con el computador.
+ * Permita transmitir las variables indicadas.
+ */
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Enviar la temperatura con un decimal
@@ -278,8 +305,7 @@ static void task_uart(void *args __attribute__((unused))) {
  */
 static void task_adc(void *args __attribute__((unused))) {
   while (true) {
-    adc_disable_scan_mode(
-        ADC1); // Deshabilitar modo escaneo para una conversión única
+    adc_disable_scan_mode(ADC1); // Deshabilitar modo escaneo para una conversión única
     adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0);
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
@@ -315,6 +341,7 @@ static void task_adc(void *args __attribute__((unused))) {
       gpio_clear(GPIOC, GPIO13);
       alarma();
     }
+    
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -332,6 +359,9 @@ static void task_pwm(void *args __attribute__((unused))) {
   }
 }
 
+/**
+ * Función principal.
+ */
 int main(void) {
   rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
   configure_pins();
