@@ -49,6 +49,7 @@
 #include <libopencm3/stm32/i2c.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
+#include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/usart.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -72,29 +73,30 @@ volatile float temperatura_C = 0, bateria_porcetaje = 0;
 volatile uint16_t temperatura = 0, porcentajeBateria = 0; // Valores RAW
 uint8_t modo_sistema = 0;
 uint16_t sensor_movimiento = 0;
+static volatile uint16_t adc_values[2]; // Array para los valores del ADC
+
+//Definicion de funciones
+void configure_pins(void);
+void configure_usart(void);
+void configure_timer(void);
+void configure_adc(void);
+void alarma(void);
+void inicializar_semaforos(void);
+void usart_send_labeled_value(const char *label, uint16_t value);
+void configure_dma(void);
+void configure_pwm(void);
+void task_adc(void *args);
+static void task_uart(void *args);
+void task_pwm(void *args);
+void task_sensor_movimiento(void *args);
+static void task_i2c(void *args);
+
 
 // SEMAFOROS
 xSemaphoreHandle temp_semaforo = 0;
 xSemaphoreHandle bateria_semaforo = 0;
 xSemaphoreHandle movimiento_semaforo = 0;
 xSemaphoreHandle led_semaphore = NULL;
-
-// void inicializar_semaforos() {
-//   temp_semaforo = xSemaphoreCreateMutex();
-//   bateria_semaforo = xSemaphoreCreateMutex();
-//   movimiento_semaforo = xSemaphoreCreateMutex();
-// }
-
-// Task to toggle the LED based on the semaphore
-static void task_led_control(void *args __attribute__((unused))) {
-    while (true) {
-        // Wait for the semaphore indefinitely
-        if (xSemaphoreTake(led_semaphore, portMAX_DELAY) == pdTRUE) {
-            // Toggle PC13 state
-            gpio_toggle(GPIOB, GPIO13);
-        }
-    }
-}
 
 // Hook function for stack overflow
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
@@ -106,9 +108,12 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     while (1) {}
 }
 
-/**
- * En esta función se realiza todas las configuraciones de pines que vayamos a utilizar.
- */
+void inicializar_semaforos() {
+  temp_semaforo = xSemaphoreCreateMutex();
+  bateria_semaforo = xSemaphoreCreateMutex();
+  movimiento_semaforo = xSemaphoreCreateMutex();
+}
+
 void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOA); // Habilitar el reloj para el puerto A
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1); 
@@ -175,6 +180,18 @@ void alarma(void) {
   // }
 }
 
+void configure_timer(void) {
+  rcc_periph_clock_enable(RCC_TIM2);       // Habilita el reloj para el Timer 2
+
+  timer_set_prescaler(TIM2, 7199);         // Prescaler para un conteo de 10 kHz (72 MHz / 7200)
+  timer_set_period(TIM2, 9999);            // Periodo para generar interrupciones cada 1 segundo (10 kHz / 10000)
+
+  timer_enable_irq(TIM2, TIM_DIER_UIE);    // Habilita la interrupción de actualización
+  nvic_enable_irq(NVIC_TIM2_IRQ);          // Habilita la interrupción del Timer 2 en el NVIC
+
+  timer_enable_counter(TIM2);              // Inicia el contador del Timer 2
+}
+
 /**
  * Configuración del ADC utilizando dos canales.
  * El canal 0 y 1.
@@ -191,7 +208,12 @@ void configure_adc(void) {
   adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_55DOT5CYC);
   adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_55DOT5CYC);
   // Selecciono el canal 0
-  // adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0); // ?
+   adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0); // ?
+   //habilito dma
+    adc_enable_dma(ADC1);
+    //habilito interrupcion
+    adc_enable_eoc_interrupt(ADC1);
+    nvic_enable_irq(NVIC_ADC1_2_IRQ);
   // Prendo el ADC
   adc_power_on(ADC1);
   // Calibro el ADC
@@ -199,13 +221,53 @@ void configure_adc(void) {
   adc_calibrate(ADC1);
 }
 
+void configure_dma(void){
+    // Habilita el reloj para el DMA1 y GPIOC
+    rcc_periph_clock_enable(RCC_DMA1);
+    // Configura el dma para transferir datos 
+    dma_set_read_from_peripheral(DMA1, DMA_CHANNEL1);
+    // Origen de los datos a transferir:
+    dma_set_peripheral_address(DMA1, DMA_CHANNEL1, (uint32_t)&ADC_DR(ADC1));
+    // Dirección de memoria destino: variables para almacenar los valores
+    dma_set_memory_address(DMA1, DMA_CHANNEL1, (uint32_t)adc_values);
+
+    // Tamaño del dato a leer y escribir: 16 bits (ya que el ADC es de 12 bits)
+    dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_PSIZE_16BIT);
+    dma_set_memory_size(DMA1, DMA_CHANNEL1, DMA_CCR_MSIZE_16BIT);
+    // Cantidad de datos a transferir:
+    dma_set_number_of_data(DMA1, DMA_CHANNEL1, 2);
+    // Incrementa la posición en memoria automáticamente
+    dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL1);
+    // La dirección del periférico (ADC) se mantiene fija
+    dma_disable_peripheral_increment_mode(DMA1, DMA_CHANNEL1);
+
+    // Se establece la prioridad del canal 7 del DMA1 como alta:
+    dma_set_priority(DMA1, DMA_CHANNEL1, DMA_CCR_PL_VERY_HIGH);
+
+    //Se habilita el modo circular para que la transferencia se repita indefinidamente
+    dma_enable_circular_mode(DMA1, DMA_CHANNEL1);
+
+    // Se habilita la interrupción que se ejecutan al finalizar la transferencia
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL1);
+
+    // Habilita la interrupción del canal correspondiente en el NVIC
+    nvic_enable_irq(NVIC_DMA1_CHANNEL1_IRQ);
+
+    // Habilita el canal de DMA
+    dma_enable_channel(DMA1, DMA_CHANNEL1);
+
+    // Relaciona las variables con los valores leídos en el bucle principal o interrupciones
+    temperatura = adc_values[0];         // Valor del canal 0
+    porcentajeBateria = adc_values[1];  // Valor del canal 1
+}
+
 /**
  * Configuración de la señal PWM, utilizando el timer 4.
  */
 void configure_pwm(void) {
-  
+
   /* Configuración del TIM4 para PWM centrado */
-  rcc_periph_clock_enable(RCC_TIM4);
+  rcc_periph_clock_enable(RCC_TIM4);    
   timer_set_mode(TIM4,                 // Timer general 4
                  TIM_CR1_CKD_CK_INT,   // Clock interno como fuente
                  TIM_CR1_CMS_CENTER_1, // Modo centrado
@@ -231,10 +293,20 @@ void configure_pwm(void) {
 //     }
 // }
 
+// Task to toggle the LED based on the semaphore
+static void task_led_control(void *args __attribute__((unused))) {
+    while (true) {
+        // Wait for the semaphore indefinitely
+        if (xSemaphoreTake(led_semaphore, portMAX_DELAY) == pdTRUE) {
+            // Toggle PC13 state
+            gpio_toggle(GPIOB, GPIO13);
+        }
+    }
+}
 /**
  * 
  */
-static void task_sensor_movimiento(void *args __attribute__((unused))) {
+void task_sensor_movimiento(void *args __attribute__((unused))) {
   while (true) {
     // Leer el valor del sensor de movimiento
     sensor_movimiento = gpio_get(GPIOB, GPIO11);  // Leer B11
@@ -249,7 +321,7 @@ static void task_sensor_movimiento(void *args __attribute__((unused))) {
     if (!sensor_movimiento) {
       xSemaphoreGive(led_semaphore);  // Give the semaphore
     }
-    
+
     vTaskDelay(pdMS_TO_TICKS(50));  // Esperar 100 ms antes de volver a leer
   }
 }
@@ -263,7 +335,8 @@ static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     char buffer_temp_bateria[20];
     char buffer_modo[20];
-
+   // temperatura_C=temperatura;
+   // bateria_porcetaje=porcentajeBateria;
     // Usar sprintf para formatear los valores flotantes
     sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", (int)temperatura_C,
             (int)bateria_porcetaje); // Convertir la temperatura a cadena
@@ -284,13 +357,13 @@ static void task_i2c(void *args __attribute__((unused))) {
  * Tarea que lleva a cabo la comunicación UART con el computador.
  * Permita transmitir las variables indicadas.
  */
-static void task_uart(void *args __attribute__((unused))) {
+void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Enviar la temperatura con un decimal
-    usart_send_labeled_value("A1", temperatura_C);
+    usart_send_labeled_value("A1", temperatura);
 
     // Enviar el porcentaje de batería con un decimal
-    usart_send_labeled_value("A2", bateria_porcetaje);
+    usart_send_labeled_value("A2", porcentajeBateria);
 
     // Enviar el valor del sensor de movimiento (por ejemplo, como entero)
     usart_send_labeled_value("V3", sensor_movimiento);
@@ -303,14 +376,13 @@ static void task_uart(void *args __attribute__((unused))) {
 /**
  * Según el UART los dos ADC estarían mostrandose correctamente.
  */
-static void task_adc(void *args __attribute__((unused))) {
+void task_adc(void *args __attribute__((unused))) {
   while (true) {
     adc_disable_scan_mode(ADC1); // Deshabilitar modo escaneo para una conversión única
     adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0);
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
       ;
-    temperatura = adc_read_regular(ADC1) & 0xFFF;
     // Convertir el valor del ADC a la temperatura en el rango de -20°C a 60°C
     temperatura_C = ((float)temperatura / 4095.0f) * 80.0f - 20.0f;
 
@@ -319,13 +391,12 @@ static void task_adc(void *args __attribute__((unused))) {
     if (temperatura_C < -20.0f)
       temperatura_C = 0.0f;
 
-    adc_disable_scan_mode(
-        ADC1); // Asegurar que no queden configuraciones residuales
+    //Lectura del canal 1
+    adc_disable_scan_mode(ADC1); // Asegurar que no queden configuraciones residuales
     adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL1);
     adc_start_conversion_direct(ADC1);
     while (!adc_eoc(ADC1))
       ;
-    porcentajeBateria = adc_read_regular(ADC1) & 0xFFF;
     // Ajuste del porcentaje de batería, asegurando que no supere el 100%
     bateria_porcetaje = (float)porcentajeBateria * (100.0f / 4095.0f);
 
@@ -347,7 +418,8 @@ static void task_adc(void *args __attribute__((unused))) {
 }
 
 // Tarea PWM
-static void task_pwm(void *args __attribute__((unused))) {
+void task_pwm(void *args __attribute__((unused))) {
+
   uint16_t pwm_val = 0;
 
   while (true) {
@@ -369,6 +441,8 @@ int main(void) {
   configure_adc();
   configure_pwm();
   lcd_init();
+    configure_dma();
+    configure_timer();
 
   // Create the binary semaphore
     led_semaphore = xSemaphoreCreateBinary();
@@ -376,8 +450,6 @@ int main(void) {
         while (1);  // Handle semaphore creation failure
     }
 
-  // Optionally give semaphore initially
-  //  xSemaphoreGive(led_semaphore);
 
   // creamos las tareas
   // xTaskCreate(task1, "LedSwitching", configMINIMAL_STACK_SIZE, NULL,
@@ -413,4 +485,32 @@ int main(void) {
   }
 
   return 0;
+}
+
+void adc1_2_isr(void) {
+    if (adc_eoc(ADC1)) { // Verifica si la conversión ha terminado
+        ADC_SR(ADC1) &= ~ADC_SR_EOC; // Limpia la bandera EOC
+
+        // Habilita el canal DMA para transferir el valor del ADC
+        dma_enable_channel(DMA1, DMA_CHANNEL1);
+    }
+}
+
+void tim2_isr(void) {
+  if (timer_get_flag(TIM2, TIM_SR_UIF)) {   // Verifica si la interrupción fue generada por el flag de actualización
+    timer_clear_flag(TIM2, TIM_SR_UIF);     // Limpia el flag de interrupción de actualización
+
+    adc_start_conversion_direct(ADC1);       // Inicia la conversión
+
+  }
+}
+
+// Interrupción para manejar el fin de la transferencia de DMA
+void dma1_channel1_isr(void) {
+    if (dma_get_interrupt_flag(DMA1, DMA_CHANNEL1, DMA_TCIF)) {
+        dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_TCIF);
+        // Aquí puedes procesar los valores directamente
+        temperatura = adc_values[0];
+        porcentajeBateria = adc_values[1];
+    }
 }
