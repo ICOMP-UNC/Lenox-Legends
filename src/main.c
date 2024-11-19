@@ -1,3 +1,4 @@
+// -------------------------- Librerías --------------------------------
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
@@ -11,6 +12,12 @@
 
 #include "lcd_i2c.h"
 
+
+// ------------------------- Definiciones ------------------------------
+
+
+
+// ------------------------- Variables   ------------------------------
 // Create a binary semaphore
 xSemaphoreHandle led_semaphore = NULL;
 
@@ -32,6 +39,9 @@ char buffer_modo[32];
 // -------------------------------------- Configuración ------------------------------------------------
 void configure_pins()
 {
+    rcc_periph_clock_enable(RCC_GPIOA);  // Habilita GPIOA para USART
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
+
     rcc_periph_clock_enable(RCC_GPIOC);
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
 
@@ -41,8 +51,6 @@ void configure_pins()
 void configure_usart(void)
 {
     rcc_periph_clock_enable(RCC_USART1); // Habilita USART1
-    rcc_periph_clock_enable(RCC_GPIOA);  // Habilita GPIOA para USART
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
     usart_set_baudrate(USART1, 9600);
     usart_set_databits(USART1, 8);
     usart_set_stopbits(USART1, USART_STOPBITS_1);
@@ -84,7 +92,7 @@ static void task_uart(void *args __attribute__((unused)))
 }
 
 // Task to toggle the LED based on the semaphore
-static void task_led_control(void *args __attribute__((unused))) {
+static void task_adc_dma(void *args __attribute__((unused))) {
     while (true) {
         // Wait for the semaphore indefinitely
         if (xSemaphoreTake(led_semaphore, portMAX_DELAY) == pdTRUE) {
@@ -168,16 +176,16 @@ int main(void) {
     if (led_semaphore == NULL) {
         while (1);  // Handle semaphore creation failure
     }
-    configure_timer(); // Initialize timer
+
+    configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
 
     // Optionally give semaphore initially
     //xSemaphoreGive(led_semaphore);
 
     // Create tasks
-    xTaskCreate(task_led_control, "LED Control", configMINIMAL_STACK_SIZE, NULL,
+    xTaskCreate(task_adc_dma, "LED Control", configMINIMAL_STACK_SIZE, NULL,
                 tskIDLE_PRIORITY + 2, NULL);
-    // xTaskCreate(task_semaphore_giver, "Semaphore Giver", configMINIMAL_STACK_SIZE,
-    //             NULL, tskIDLE_PRIORITY + 1, NULL);
+
     xTaskCreate(task_uart, "UART", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2,
                 NULL);
 
