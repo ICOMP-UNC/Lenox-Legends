@@ -1,5 +1,8 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/timer.h>
+#include <libopencm3/cm3/nvic.h>
+
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
@@ -28,12 +31,38 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     while (1) {}
 }
 
-// Task to periodically give the semaphore
-static void task_semaphore_giver(void *args __attribute__((unused))) {
-    while (true) {
-        vTaskDelay(pdMS_TO_TICKS(10)); // Wait 1 second
-        xSemaphoreGive(led_semaphore);  // Give the semaphore
+// // Task to periodically give the semaphore
+// static void task_semaphore_giver(void *args __attribute__((unused))) {
+//     while (true) {
+//         vTaskDelay(pdMS_TO_TICKS(10)); // Wait 1 second
+//         xSemaphoreGive(led_semaphore);  // Give the semaphore
+//     }
+// }
+
+// Timer interrupt handler
+void tim2_isr(void) {
+    if (timer_get_flag(TIM2, TIM_SR_UIF)) { // Check for update interrupt
+        timer_clear_flag(TIM2, TIM_SR_UIF); // Clear the interrupt flag
+        xSemaphoreGiveFromISR(led_semaphore, NULL); // Give the semaphore from ISR
     }
+}
+
+// Timer configuration
+void timer_setup(void) {
+    rcc_periph_clock_enable(RCC_TIM2); // Enable TIM2 clock
+
+    timer_disable_counter(TIM2);
+
+    //timer_reset(TIM2); // Reset TIM2 configuration
+    timer_set_prescaler(TIM2, 7200 - 1); // Prescaler for 10 kHz timer clock
+    timer_set_period(TIM2, 10000 - 1); // Period for 1-second interrupt
+
+    //timer_enable_update_event(TIM2);    // Enable update events
+    
+    timer_enable_irq(TIM2, TIM_DIER_UIE); // Enable update interrupt
+    nvic_enable_irq(NVIC_TIM2_IRQ); // Enable TIM2 interrupt in NVIC
+
+    timer_enable_counter(TIM2); // Start the timer
 }
 
 int main(void) {
@@ -50,18 +79,23 @@ int main(void) {
         while (1);  // Handle semaphore creation failure
     }
 
+    // Initialize timer
+    timer_setup();
+
     // Optionally give semaphore initially
-    xSemaphoreGive(led_semaphore);
+    //xSemaphoreGive(led_semaphore);
 
     // Create tasks
     xTaskCreate(task_led_control, "LED Control", configMINIMAL_STACK_SIZE, NULL,
                 tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(task_semaphore_giver, "Semaphore Giver", configMINIMAL_STACK_SIZE,
-                NULL, tskIDLE_PRIORITY + 1, NULL);
+    // xTaskCreate(task_semaphore_giver, "Semaphore Giver", configMINIMAL_STACK_SIZE,
+    //             NULL, tskIDLE_PRIORITY + 1, NULL);
 
     // Start the scheduler
     vTaskStartScheduler();
 
     // Infinite loop (should never reach here)
     while (1) {}
+
+    return 0;
 }
