@@ -39,7 +39,6 @@ uint16_t sensor_movimiento = 0;
 
 // variables globales
 volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
-volatile uint8_t REINICIO = 1;
 
 char buffer[BUFFER_SIZE];
 
@@ -199,9 +198,8 @@ static void task_adc_dma(void *args __attribute__((unused))) {
                           DMA_CHANNEL1); // Deshabilita el canal 1 del DMA1
 
       // Verifica si el contador es mayor a 5
-      if ((Timer_Batery_Count == BATERY_SENSE_TIME) || (REINICIO == 1)) {
+      if ((Timer_Batery_Count == BATERY_SENSE_TIME)) {
         Timer_Batery_Count = 0;
-        REINICIO = 0;
         adc_set_regular_sequence(
             ADC1, 1,
             (uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1
@@ -228,7 +226,7 @@ static void task_adc_dma(void *args __attribute__((unused))) {
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     modo_sistema = 0;
-    sprintf(buffer_temp_bateria, "Temperatura: %d", temperatura);
+    sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", temperatura, porcentajeBateria);
     if (modo_sistema == 0) {
       sprintf(buffer_modo, "Modo: Auto", modo_sistema);
     } else {
@@ -238,7 +236,7 @@ static void task_i2c(void *args __attribute__((unused))) {
     lcd_print(buffer_temp_bateria);
     lcd_set_cursor(1, 0);
     lcd_print(buffer_modo);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+   // vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
@@ -306,6 +304,8 @@ int main(void) {
   configure_dma();
 
   lcd_init();
+  
+  adc_start_conversion_direct(ADC1);
 
   // Create the binary semaphore
   led_semaphore = xSemaphoreCreateBinary();
