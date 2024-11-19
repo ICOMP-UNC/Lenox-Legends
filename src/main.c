@@ -15,14 +15,12 @@
 #include "lcd_i2c.h"
 
 // ------------------------- Definiciones ------------------------------
-// Definiciones para el systick
-#define RELOAD_COUNT 8999
-#define TOGGLE_COUNT 500
 // Definiciones para el timer
 #define TIMER_PRESCALER 7199     // prescaler para 10khz
 #define TIMER_PERIOD_ADC 9999    // periodo para 1khz
 #define TIMER_PERIOD_UART 299999 // periodo para 30 seg
 #define BATERY_SENSE_TIME 15     // 1Leeremos la bateria cada 10 seg;
+
 // Definiciones para el USART
 #define USART_BAUDRATE 9600
 #define USART_DATABITS 8
@@ -40,7 +38,6 @@ uint8_t modo_sistema = 0;
 uint16_t sensor_movimiento = 0;
 
 // variables globales
-volatile uint16_t bateria = 0;
 volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
 volatile uint8_t REINICIO = 1;
 
@@ -54,8 +51,10 @@ xSemaphoreHandle movimiento_semaforo = 0;
 char buffer_temp_bateria[32];
 char buffer_modo[32];
 
-// -------------------------------------- Configuración
-// ------------------------------------------------
+// -------------------------------------- Configuración ------------------------------------------------
+/**
+ * Función para configurar los pines.
+ */
 void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOA); // Habilita GPIOA para USART
   gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
@@ -68,6 +67,9 @@ void configure_pins() {
   // TODO: Agregar configuración de los pines
 }
 
+/**
+ * Función para configurar el UART.
+ */
 void configure_usart(void) {
   rcc_periph_clock_enable(RCC_USART1); // Habilita USART1
   usart_set_baudrate(USART1, 9600);
@@ -79,7 +81,9 @@ void configure_usart(void) {
   usart_enable(USART1);
 }
 
-// Timer configuration
+/**
+ * Función para configurar el TIMER.
+ */
 void configure_timer(void) {
   rcc_periph_clock_enable(RCC_TIM2); // Enable TIM2 clock
 
@@ -97,6 +101,9 @@ void configure_timer(void) {
   timer_enable_counter(TIM2); // Start the timer
 }
 
+/**
+ * Función para configurar el ADC.
+ */
 void configure_adc(void) {
   rcc_periph_clock_enable(RCC_ADC1); // Habilita el reloj para el ADC1
 
@@ -106,15 +113,13 @@ void configure_adc(void) {
 
   adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_1DOT5CYC); // Canal 0
   adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_1DOT5CYC); // Canal 1
-  adc_set_regular_sequence(
-      ADC1, 1,
-      (uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1  // Configura
-                                  // la secuencia regular de canales
+  // Configura la secuencia regular de canales
+  adc_set_regular_sequence(ADC1, 1,(uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1  /
 
   // Habilita la interrupción de fin de conversión (EOC) del ADC
   adc_enable_eoc_interrupt(ADC1);
-  nvic_enable_irq(
-      NVIC_ADC1_2_IRQ); // Habilita la interrupción del ADC en el NVIC
+  // Habilita la interrupción del ADC en el NVIC
+  nvic_enable_irq(NVIC_ADC1_2_IRQ); 
 
   // Configura el ADC para que dispare la transferencia de datos
   adc_enable_dma(ADC1); // Habilita DMA (si es necesario)
@@ -125,6 +130,9 @@ void configure_adc(void) {
   adc_calibrate(ADC1);         // Calibra el ADC
 }
 
+/**
+ * Función para configurar el DMA.
+ */
 void configure_dma(void) {
   // Habilita el reloj para el DMA1 y GPIOC
   rcc_periph_clock_enable(RCC_DMA1);
@@ -134,7 +142,7 @@ void configure_dma(void) {
   // Origen de los datos a transferir:
   dma_set_peripheral_address(DMA1, DMA_CHANNEL1, &ADC_DR(ADC1));
   // Dirección de datos destino. El ODR (Output Data Register) del GPIOA:
-  dma_set_memory_address(DMA1, DMA_CHANNEL1, &bateria);
+  dma_set_memory_address(DMA1, DMA_CHANNEL1, &porcentajeBateria);
   // Tamaño del dato a leer
   dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_PSIZE_16BIT);
   // Tamaño del dato a escribir
@@ -161,8 +169,10 @@ void configure_dma(void) {
   dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
 }
 
-//------------------- Tareas
-//--------------------------------------------------------------------
+//------------------- Tareas --------------------------------------------------------------------
+/**
+ * Tarea que permite la comunicación UART entre la placa y la computadora.
+ */
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Envía las variables etiquetadas por UART
@@ -176,7 +186,9 @@ static void task_uart(void *args __attribute__((unused))) {
   }
 }
 
-// Task to toggle the LED based on the semaphore
+/**
+ * Tarea que realiza la lectura de los puerto A0 Y A1 utilizando el adc y dma.
+ */
 static void task_adc_dma(void *args __attribute__((unused))) {
   while (true) {
     // Wait for the semaphore indefinitely
@@ -194,17 +206,14 @@ static void task_adc_dma(void *args __attribute__((unused))) {
             ADC1, 1,
             (uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1
         dma_set_memory_address(DMA1, DMA_CHANNEL1,
-                               &bateria);       // Dirección de memoria destino
+                               &porcentajeBateria);       // Dirección de memoria destino
         adc_power_on(ADC1);                     // Enciende el ADC
         adc_start_conversion_direct(ADC1);      // Inicia la conversión
         dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
         Timer_Batery_Count = 0;
       } else {
-        adc_set_regular_sequence(
-            ADC1, 1,
-            (uint8_t[]){ADC_CHANNEL0}); // Secuencia de 1 canal: canal 1
-        dma_set_memory_address(DMA1, DMA_CHANNEL1,
-                               &temperatura); // Dirección de memoria destino
+        adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL0}); // Secuencia de 1 canal: canal 1
+        dma_set_memory_address(DMA1, DMA_CHANNEL1,&temperatura); // Dirección de memoria destino
         adc_power_on(ADC1);                   // Enciende el ADC
         adc_start_conversion_direct(ADC1);
         dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
@@ -213,10 +222,11 @@ static void task_adc_dma(void *args __attribute__((unused))) {
   }
 }
 
+/**
+ * Tarea que permite visualizar las variables de interes en la LCD 16x2.
+ */
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
-    temperatura++;
-    porcentajeBateria++;
     modo_sistema = 0;
     sprintf(buffer_temp_bateria, "Temperatura: %d", temperatura);
     if (modo_sistema == 0) {
@@ -244,14 +254,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
   }
 }
 
-// // Task to periodically give the semaphore
-// static void task_semaphore_giver(void *args __attribute__((unused))) {
-//     while (true) {
-//         vTaskDelay(pdMS_TO_TICKS(10)); // Wait 1 second
-//         xSemaphoreGive(led_semaphore);  // Give the semaphore
-//     }
-// }
-
 void usart_send_labeled_value(const char *label, uint16_t value) {
   char buffer[20];
   int len = snprintf(buffer, sizeof(buffer), ">%s:%u\n", label,
@@ -261,8 +263,10 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
   }
 }
 
-// --------------------------------------- Interrupciones
-// --------------------------- Timer interrupt handler
+// --------------------------------------- Interrupciones -------------------------------
+/**
+ * Manejo de la interrupción para el timer 2.
+ */
 void tim2_isr(void) {
   if (timer_get_flag(TIM2, TIM_SR_UIF)) {       // Check for update interrupt
     timer_clear_flag(TIM2, TIM_SR_UIF);         // Clear the interrupt flag
@@ -270,6 +274,9 @@ void tim2_isr(void) {
   }
 }
 
+/**
+ * Manejo de la interrupción para el adc, canal 0 y 1.
+ */
 void adc1_2_isr(void) {
   if (adc_eoc(ADC1)) {
     // Limpia el flag de fin de conversión (EOC)
@@ -277,13 +284,15 @@ void adc1_2_isr(void) {
   }
 }
 
-// Función de interrupción del DMA1-CH1
+/**
+ * Manejo de la interrupción para el dma.
+ */
 void dma1_channel1_isr(void) {
   //     // Limpia el flag de transferencia completa
   dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
   usart_send_labeled_value(
       "Bat:",
-      bateria); // Envía el valor del ADC por el puerto serial
+      porcentajeBateria); // Envía el valor del ADC por el puerto serial
   usart_send_labeled_value(
       "Temp:",
       temperatura); // Envía el valor del ADC por el puerto serial
