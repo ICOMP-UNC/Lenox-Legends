@@ -33,10 +33,10 @@ volatile uint32_t systick_Count=0;
 volatile uint16_t temperatura=0;
 //Varibables para logica de puerta
 volatile uint32_t contador_puerta=0;
-bool puerta_abierta = false;
-bool puerta_cerrada = true;
-bool puerta_abriendo = false;
-bool puerta_cerrando = false;
+bool puerta_abierta;
+bool puerta_cerrada;
+bool puerta_abriendo;
+bool puerta_cerrando;
 
 bool modo=1; //0: manual, 1: automatico
 
@@ -120,14 +120,12 @@ void exti_setup(){
 void exti4_isr(void){
     exti_reset_request(EXTI4);
     temperatura=0;
-    if(puerta_abriendo){
-        puerta_abriendo = false;
-        puerta_cerrando = true;
+    if(puerta_cerrada){
+        puerta_abriendo=true;
     }
     else{
-            puerta_abriendo = true;
-            puerta_cerrando = false;
-        }
+        puerta_cerrando=true;
+    }
 }
 
 void sys_tick_handler(void){
@@ -151,7 +149,6 @@ void sys_tick_handler(void){
     }
     else{
         if(puerta_cerrando){
-            temperatura=10;
             if(contador_puerta <= 6){
                 cerrar_puerta();
                 contador_puerta++;
@@ -164,6 +161,13 @@ void sys_tick_handler(void){
             }
         }
     }
+}
+
+void inicializar_puerta(){
+    puerta_abierta=false;
+    puerta_cerrada=true;
+    puerta_abriendo=false;
+    puerta_cerrando=false;
 }
 
 void abrir_puerta(){
@@ -203,6 +207,7 @@ int main(void)
     configure_pins();
     configure_systick();
     exti_setup();
+    inicializar_puerta();
     while (1)
     {
         
