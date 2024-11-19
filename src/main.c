@@ -37,7 +37,8 @@ volatile uint32_t systick_Count=0;
 volatile uint16_t temperatura=0;
 volatile uint16_t bateria=0;
 volatile uint16_t Timer_Batery_Count=0;  //contador para leer la bateria
-volatile uint8_t REINICIO=1;
+volatile bool REINICIO=1;
+volatile bool flag_UART=1;          //bandera para enviar datos por UART
 
 char buffer[BUFFER_SIZE];
 
@@ -104,6 +105,51 @@ void configure_dma(void);
 * @return void
 */
 void configure_usart(void);
+
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void usart_send_value(const char *label, uint16_t value);
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void sys_tick_handler(void);
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void tim2_isr(void);
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void adc1_2_isr(void);
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void dma1_channel1_isr(void);
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void tim3_isr(void);
+
+/*
+* @brief Envía los datos por USART
+*
+* @return void
+*/
+void enviar_sados(void);
+
 
 //implementaciones
 
@@ -241,7 +287,10 @@ int main(void)
     configure_usart();
     while (1)
     {
-
+        if(flag_UART){
+        enviar_sados();
+        flag_UART=0;
+     }
     }
 }
 
@@ -284,7 +333,7 @@ void tim2_isr(void) {
     dma_disable_channel(DMA1, DMA_CHANNEL1);  // Deshabilita el canal 1 del DMA1
     
     // Verifica si el contador es mayor a 5
-    if((Timer_Batery_Count == BATERY_SENSE_TIME) || (REINICIO==1)){
+    if(((REINICIO) || Timer_Batery_Count == BATERY_SENSE_TIME)){
       Timer_Batery_Count=0;
       REINICIO=0;
      adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL1});  // Secuencia de 1 canal: canal 1
@@ -317,8 +366,8 @@ void adc1_2_isr(void) {
 void dma1_channel1_isr(void) {
 //     // Limpia el flag de transferencia completa
      dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
-       usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
-       usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
+     //  usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
+     //  usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
 
 }
 
@@ -326,10 +375,13 @@ void tim3_isr(void) {
     if (timer_get_flag(TIM3, TIM_SR_UIF)) {   // Verifica si la interrupción fue generada por el flag de actualización
     timer_clear_flag(TIM3, TIM_SR_UIF);     // Limpia el flag de interrupción de actualización
     gpio_toggle(GPIOC, GPIO13);  // Togglea el pin PC13
-    //    usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
-   // usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
-
+    flag_UART=1;                
     }   
 }
 
+void enviar_sados(void){
+    usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
+    usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
+
+}
 
