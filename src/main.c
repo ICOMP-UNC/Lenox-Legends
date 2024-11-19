@@ -16,12 +16,17 @@
 #include <stdio.h>
 #include "lcd_i2c.h"
 
-//defines
+//Definiciones para el systick
 #define RELOAD_COUNT 8999
 #define TOGGLE_COUNT 500
+//Definiciones para el timer
 #define TIMER_PRESCALER 7199 //prescaler para 10khz
-#define TIMER_PERIOD 9999 //periodo para 1khz
-//#define BATERIA_TIMER 5 //1Leeremos la bateria cada 10 seg;
+#define TIMER_PERIOD_ADC 9999 //periodo para 1khz
+#define TIMER_PERIOD_UART 299999 //periodo para 30 seg
+#define BATERY_SENSE_TIME 15 //1Leeremos la bateria cada 10 seg;
+//Definiciones para el USART
+#define USART_BAUDRATE 9600
+#define USART_DATABITS 8
 
 //magic numbers
 #define BUFFER_SIZE 16
@@ -31,9 +36,8 @@
 volatile uint32_t systick_Count=0;
 volatile uint16_t temperatura=0;
 volatile uint16_t bateria=0;
-volatile uint16_t adc_values=1;
 volatile uint16_t Timer_Batery_Count=0;  //contador para leer la bateria
-volatile int a=0;
+volatile uint8_t REINICIO=1;
 
 char buffer[BUFFER_SIZE];
 
@@ -110,8 +114,11 @@ void systemInit(){
 void configure_pins()
 {
     rcc_periph_clock_enable(RCC_GPIOC);
+    rcc_periph_clock_enable(RCC_GPIOA);
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1);
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
+
     // TODO: Agregar configuración de los pines
 }
 
@@ -123,15 +130,26 @@ void configure_systick(void){
 }
 
 void configure_timer(void) {
+//Configuro el timer 2
   rcc_periph_clock_enable(RCC_TIM2);       // Habilita el reloj para el Timer 2
 
   timer_set_prescaler(TIM2, TIMER_PRESCALER);         // Prescaler para un conteo de 10 kHz (72 MHz / 7200)
-  timer_set_period(TIM2, TIMER_PERIOD);            // Periodo para generar interrupciones cada 1 segundo (10 kHz / 10000)
+  timer_set_period(TIM2, TIMER_PERIOD_ADC);            // Periodo para generar interrupciones cada 1 segundo (10 kHz / 10000)
 
   timer_enable_irq(TIM2, TIM_DIER_UIE);    // Habilita la interrupción de actualización
   nvic_enable_irq(NVIC_TIM2_IRQ);          // Habilita la interrupción del Timer 2 en el NVIC
 
   timer_enable_counter(TIM2);              // Inicia el contador del Timer 2
+  //Configuro timer 1
+    rcc_periph_clock_enable(RCC_TIM3);       // Habilita el reloj para el Timer 1
+
+    timer_set_prescaler(TIM3, TIMER_PRESCALER);         // Prescaler para un conteo de 10 kHz (72 MHz / 7200)
+    timer_set_period(TIM3, TIMER_PERIOD_UART);            // Periodo para generar interrupciones cada 30 segundos (10 kHz / 300000)
+    
+    timer_enable_irq(TIM3, TIM_DIER_UIE);    // Habilita la interrupción de actualización
+    nvic_enable_irq(NVIC_TIM3_IRQ);          // Habilita la interrupción del Timer 2 en el NVIC
+
+    timer_enable_counter(TIM3);              // Inicia el contador del Timer 2
 }
 
 void configure_adc(void) {
@@ -143,7 +161,7 @@ void configure_adc(void) {
 
   adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_1DOT5CYC);  // Canal 0
   adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_1DOT5CYC);  // Canal 1
- adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL0});  // Secuencia de 1 canal: canal 1  // Configura la secuencia regular de canales
+ adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL1});  // Secuencia de 1 canal: canal 1  // Configura la secuencia regular de canales
 
   // Habilita la interrupción de fin de conversión (EOC) del ADC
   adc_enable_eoc_interrupt(ADC1);
@@ -168,7 +186,7 @@ void configure_dma(void){
     // Origen de los datos a transferir:
     dma_set_peripheral_address(DMA1, DMA_CHANNEL1, &ADC_DR(ADC1));
     // Dirección de datos destino. El ODR (Output Data Register) del GPIOA:
-    dma_set_memory_address(DMA1, DMA_CHANNEL1, &adc_values);
+    dma_set_memory_address(DMA1, DMA_CHANNEL1, &bateria);
     // Tamaño del dato a leer 
     dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_PSIZE_16BIT);
     // Tamaño del dato a escribir
@@ -201,10 +219,8 @@ void configure_dma(void){
 
 void configure_usart(void) {
     rcc_periph_clock_enable(RCC_USART1);        // Habilita USART1
-    rcc_periph_clock_enable(RCC_GPIOA);         // Habilita GPIOA para USART
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
-    usart_set_baudrate(USART1, 9600);
-    usart_set_databits(USART1, 8);
+    usart_set_baudrate(USART1, USART_BAUDRATE); // Configura el baudrate
+    usart_set_databits(USART1, USART_DATABITS); // Configura la cantidad de bits de datos
     usart_set_stopbits(USART1, USART_STOPBITS_1);
     usart_set_mode(USART1, USART_MODE_TX);
     usart_set_parity(USART1, USART_PARITY_NONE);
@@ -214,6 +230,7 @@ void configure_usart(void) {
 
 int main(void)
 {
+
     systemInit();
     lcd_init();
     configure_pins();
@@ -265,18 +282,21 @@ void tim2_isr(void) {
     timer_clear_flag(TIM2, TIM_SR_UIF);     // Limpia el flag de interrupción de actualización
    adc_power_off(ADC1);  // Apaga el ADC para configurarlo
     dma_disable_channel(DMA1, DMA_CHANNEL1);  // Deshabilita el canal 1 del DMA1
-    //adc_disable_scan_mode(ADC1);
-    if(Timer_Batery_Count>5){
+    
+    // Verifica si el contador es mayor a 5
+    if((Timer_Batery_Count == BATERY_SENSE_TIME) || (REINICIO==1)){
+      Timer_Batery_Count=0;
+      REINICIO=0;
      adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL1});  // Secuencia de 1 canal: canal 1
-     dma_set_memory_address(DMA1, DMA_CHANNEL1, &bateria);
+     dma_set_memory_address(DMA1, DMA_CHANNEL1, &bateria); // Dirección de memoria destino
      adc_power_on(ADC1);  // Enciende el ADC 
-     adc_start_conversion_direct(ADC1);
+     adc_start_conversion_direct(ADC1); // Inicia la conversión
      dma_enable_channel(DMA1, DMA_CHANNEL1);  // Habilita el canal 1 del DMA1
     Timer_Batery_Count=0;
     }
     else{
       adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL0});  // Secuencia de 1 canal: canal 1
-      dma_set_memory_address(DMA1, DMA_CHANNEL1, &temperatura);
+      dma_set_memory_address(DMA1, DMA_CHANNEL1, &temperatura); // Dirección de memoria destino
       adc_power_on(ADC1);  // Enciende el ADC
       adc_start_conversion_direct(ADC1);
         dma_enable_channel(DMA1, DMA_CHANNEL1);  // Habilita el canal 1 del DMA1
@@ -290,9 +310,6 @@ void adc1_2_isr(void) {
         // Limpia el flag de fin de conversión (EOC)
         adc_clear_flag(ADC1,ADC_SR_EOC);
     }
-            usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
-            usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
-
 
 }
 
@@ -300,7 +317,19 @@ void adc1_2_isr(void) {
 void dma1_channel1_isr(void) {
 //     // Limpia el flag de transferencia completa
      dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
+       usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
+       usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
 
+}
+
+void tim3_isr(void) {
+    if (timer_get_flag(TIM3, TIM_SR_UIF)) {   // Verifica si la interrupción fue generada por el flag de actualización
+    timer_clear_flag(TIM3, TIM_SR_UIF);     // Limpia el flag de interrupción de actualización
+    gpio_toggle(GPIOC, GPIO13);  // Togglea el pin PC13
+    //    usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
+   // usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
+
+    }   
 }
 
 
