@@ -11,6 +11,7 @@
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/adc.h>
+#include <libopencm3/stm32/dma.h>
 #include <stdint.h>
 #include <stdio.h>
 #include "lcd_i2c.h"
@@ -30,6 +31,7 @@
 volatile uint32_t systick_Count=0;
 volatile uint16_t temperatura=0;
 volatile uint16_t bateria=0;
+volatile uint16_t adc_values;
 volatile uint8_t Timer_Batery_Count=0;  //contador para leer la bateria
 
 char buffer[BUFFER_SIZE];
@@ -56,17 +58,40 @@ void configure_pins(void);
 */
 void configure_systick(void);
 /*
-* @brief Handler del systick
-*
-* @return void
-*/
-void sys_tick_handler(void);
-/*
 * @brief Imprime en el LCD
 *
 * @return void
 */
 void print_lcd(void);
+
+/*
+* @brief Envía un valor por USART
+*
+* @param value Valor a enviar
+* @return void
+*/
+void usart_send_value(uint16_t value);
+
+/*
+* @brief Configura el ADC
+*
+* @return void
+*/
+void configure_adc(void);
+
+/*
+* @brief Configura el timer
+*
+* @return void
+*/
+void configure_timer(void);
+
+/*
+* @brief Configura el DMA
+*
+* @return void
+*/
+void configure_dma(void);
 
 //implementaciones
 
@@ -126,6 +151,56 @@ void configure_adc(void) {
  
 }
 
+void configure_dma(void){
+    // Habilita el reloj para el DMA1 y GPIOC
+    rcc_periph_clock_enable(RCC_DMA1);
+    
+    // Configura el dma para transferir datos 
+    dma_set_read_from_peripheral(DMA1, DMA_CHANNEL1);
+    // Origen de los datos a transferir:
+    dma_set_peripheral_address(DMA1, DMA_CHANNEL1, &ADC_DR(ADC1));
+    // Dirección de datos destino. El ODR (Output Data Register) del GPIOA:
+    dma_set_memory_address(DMA1, DMA_CHANNEL1, &adc_values);
+    // Tamaño del dato a leer 
+    dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_PSIZE_16BIT);
+    // Tamaño del dato a escribir
+    dma_set_memory_size(DMA1, DMA_CHANNEL1, DMA_CCR_MSIZE_16BIT);
+
+
+    // Cantidad de datos a transferir:
+    dma_set_number_of_data(DMA1, DMA_CHANNEL1, 1);
+
+    // Se incrementa automaticamente la posición en memoria:
+    dma_disable_memory_increment_mode(DMA1, DMA_CHANNEL1);
+    // La dirección destino se mantiene fija:
+    dma_disable_peripheral_increment_mode(DMA1, DMA_CHANNEL1);
+    // Se establece la prioridad del canal 7 del DMA1 como alta:
+    dma_set_priority(DMA1, DMA_CHANNEL1, DMA_CCR_PL_VERY_HIGH);
+    //Se habilita el modo circular para que la transferencia se repita indefinidamente
+    dma_enable_circular_mode(DMA1, DMA_CHANNEL1);
+    // Se habilita la interrupción que se ejecutan al finalizar la transferencia para togglear un pin (no es necesario)
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL1);
+
+ 
+    
+
+    // Se habilita en el NVIC la interrupción del DMA1-CH7
+    nvic_enable_irq(NVIC_DMA1_CHANNEL1_IRQ);
+
+}
+
+void configure_usart(void) {
+    rcc_periph_clock_enable(RCC_USART1);        // Habilita USART1
+    rcc_periph_clock_enable(RCC_GPIOA);         // Habilita GPIOA para USART
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
+    usart_set_baudrate(USART1, 9600);
+    usart_set_databits(USART1, 8);
+    usart_set_stopbits(USART1, USART_STOPBITS_1);
+    usart_set_mode(USART1, USART_MODE_TX);
+    usart_set_parity(USART1, USART_PARITY_NONE);
+    usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
+    usart_enable(USART1);
+}
 
 int main(void)
 {
@@ -135,15 +210,23 @@ int main(void)
     configure_systick();
     configure_timer();
     configure_adc();
+    configure_dma();
+    configure_usart();
     while (1)
     {
-        
+    }
+}
+
+void usart_send_value(uint16_t value) {
+    char buffer[10];
+    int len = snprintf(buffer, sizeof(buffer), "%u\n", value); // Convierte el valor a cadena
+    for (int i = 0; i < len; i++) {
+        usart_send_blocking(USART1, buffer[i]);   // Envía cada carácter
     }
 }
 
 void print_lcd(){
     //preparamos las cosas para imprimir
-    temperatura++;
     sprintf(buffer,"Temp: %d",temperatura);
     lcd_clear();
     lcd_set_cursor(0,0);
@@ -159,7 +242,6 @@ void sys_tick_handler(void){
     systick_Count++;
     if(systick_Count > TOGGLE_COUNT){
         systick_Count = 0;
-       // gpio_toggle(GPIOC, GPIO13);
         print_lcd();
     }
 }
@@ -175,6 +257,7 @@ void tim2_isr(void) {
     else{
         adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0);
         adc_start_conversion_direct(ADC1);
+        Timer_Batery_Count++;
 
     }
 
@@ -182,22 +265,25 @@ void tim2_isr(void) {
 }
 
 void adc1_2_isr(void) {
-  if (adc_eoc(ADC1)) {  // Verifica si la conversión ha finalizado
-     if(Timer_Batery_Count==BATERIA_TIMER){
-      bateria = adc_read_regular(ADC1);  // Lee el valor de la conversión
-      Timer_Batery_Count=0;
-     }
-     else{
-      Timer_Batery_Count++;
-      temperatura = adc_read_regular(ADC1);  // Lee el valor de la conversión
-     }
-
-  }
-
-  if(bateria>2000){
-    gpio_set(GPIOC, GPIO13);
-  }
-  else{
-    gpio_clear(GPIOC, GPIO13);
-  }
+    if (adc_eoc(ADC1)) {
+        // Limpia el flag de fin de conversión (EOC)
+        adc_clear_flag(ADC1,ADC_SR_EOC);
+    }
+        gpio_toggle(GPIOC, GPIO13);  // Togglea el pin PC13
 }
+
+void dma1_channel1_isr(void) {
+    // Limpia el flag de transferencia completa
+    dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
+    if(Timer_Batery_Count==BATERIA_TIMER){
+        bateria = adc_values;
+        Timer_Batery_Count=0;
+    }
+    else{
+        temperatura = adc_values;
+    }
+    usart_send_value(adc_values);  // Envía el valor del ADC por el puerto serial
+
+}
+
+
