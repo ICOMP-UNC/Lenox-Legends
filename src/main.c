@@ -21,7 +21,7 @@
 #define TOGGLE_COUNT 500
 #define TIMER_PRESCALER 7199 //prescaler para 10khz
 #define TIMER_PERIOD 9999 //periodo para 1khz
-#define BATERIA_TIMER 2 //1Leeremos la bateria cada 10 seg;
+//#define BATERIA_TIMER 5 //1Leeremos la bateria cada 10 seg;
 
 //magic numbers
 #define BUFFER_SIZE 16
@@ -31,8 +31,9 @@
 volatile uint32_t systick_Count=0;
 volatile uint16_t temperatura=0;
 volatile uint16_t bateria=0;
-volatile uint16_t adc_values;
-volatile uint8_t Timer_Batery_Count=0;  //contador para leer la bateria
+volatile uint16_t adc_values=1;
+volatile uint16_t Timer_Batery_Count=0;  //contador para leer la bateria
+volatile int a=0;
 
 char buffer[BUFFER_SIZE];
 
@@ -70,7 +71,7 @@ void print_lcd(void);
 * @param value Valor a enviar
 * @return void
 */
-void usart_send_value(uint16_t value);
+void usart_send_value(const char *label, uint16_t value);
 
 /*
 * @brief Configura el ADC
@@ -92,6 +93,13 @@ void configure_timer(void);
 * @return void
 */
 void configure_dma(void);
+
+/*
+* @brief Configura el USART
+*
+* @return void
+*/
+void configure_usart(void);
 
 //implementaciones
 
@@ -132,10 +140,10 @@ void configure_adc(void) {
   adc_power_off(ADC1);  // Apaga el ADC para configurarlo
 
   // Configura el tiempo de muestreo para cada canal
+
   adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_1DOT5CYC);  // Canal 0
   adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_1DOT5CYC);  // Canal 1
-
-  // Configura la secuencia regular de canales
+ adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL0});  // Secuencia de 1 canal: canal 1  // Configura la secuencia regular de canales
 
   // Habilita la interrupción de fin de conversión (EOC) del ADC
   adc_enable_eoc_interrupt(ADC1);
@@ -186,6 +194,8 @@ void configure_dma(void){
 
     // Se habilita en el NVIC la interrupción del DMA1-CH7
     nvic_enable_irq(NVIC_DMA1_CHANNEL1_IRQ);
+        dma_enable_channel(DMA1, DMA_CHANNEL1);  // Habilita el canal 1 del DMA1
+
 
 }
 
@@ -214,15 +224,17 @@ int main(void)
     configure_usart();
     while (1)
     {
+
     }
 }
 
-void usart_send_value(uint16_t value) {
-    char buffer[10];
-    int len = snprintf(buffer, sizeof(buffer), "%u\n", value); // Convierte el valor a cadena
-    for (int i = 0; i < len; i++) {
-        usart_send_blocking(USART1, buffer[i]);   // Envía cada carácter
-    }
+void usart_send_value(const char *label, uint16_t value) {
+  char buffer[20];
+  int len = snprintf(buffer, sizeof(buffer), "%s:%u\n", label,
+                     value); // Formato: "Etiqueta:Valor"
+  for (int i = 0; i < len; i++) {
+    usart_send_blocking(USART1, buffer[i]); // Envía cada carácter
+  }
 }
 
 void print_lcd(){
@@ -247,20 +259,29 @@ void sys_tick_handler(void){
 }
 
 void tim2_isr(void) {
+    Timer_Batery_Count=Timer_Batery_Count+1;
+    
   if (timer_get_flag(TIM2, TIM_SR_UIF)) {   // Verifica si la interrupción fue generada por el flag de actualización
     timer_clear_flag(TIM2, TIM_SR_UIF);     // Limpia el flag de interrupción de actualización
-    adc_disable_scan_mode(ADC1);
-    if(Timer_Batery_Count==BATERIA_TIMER){
-      adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL1);
-      adc_start_conversion_direct(ADC1);
+   adc_power_off(ADC1);  // Apaga el ADC para configurarlo
+    dma_disable_channel(DMA1, DMA_CHANNEL1);  // Deshabilita el canal 1 del DMA1
+    //adc_disable_scan_mode(ADC1);
+    if(Timer_Batery_Count>5){
+     adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL1});  // Secuencia de 1 canal: canal 1
+     dma_set_memory_address(DMA1, DMA_CHANNEL1, &bateria);
+     adc_power_on(ADC1);  // Enciende el ADC 
+     adc_start_conversion_direct(ADC1);
+     dma_enable_channel(DMA1, DMA_CHANNEL1);  // Habilita el canal 1 del DMA1
+    Timer_Batery_Count=0;
     }
     else{
-        adc_set_regular_sequence(ADC1, 1, ADC_CHANNEL0);
-        adc_start_conversion_direct(ADC1);
-        Timer_Batery_Count++;
+      adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL0});  // Secuencia de 1 canal: canal 1
+      dma_set_memory_address(DMA1, DMA_CHANNEL1, &temperatura);
+      adc_power_on(ADC1);  // Enciende el ADC
+      adc_start_conversion_direct(ADC1);
+        dma_enable_channel(DMA1, DMA_CHANNEL1);  // Habilita el canal 1 del DMA1
 
     }
-
   }
 }
 
@@ -269,20 +290,16 @@ void adc1_2_isr(void) {
         // Limpia el flag de fin de conversión (EOC)
         adc_clear_flag(ADC1,ADC_SR_EOC);
     }
-        gpio_toggle(GPIOC, GPIO13);  // Togglea el pin PC13
+            usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
+            usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
+
+
 }
 
+// Función de interrupción del DMA1-CH1
 void dma1_channel1_isr(void) {
-    // Limpia el flag de transferencia completa
-    dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
-    if(Timer_Batery_Count==BATERIA_TIMER){
-        bateria = adc_values;
-        Timer_Batery_Count=0;
-    }
-    else{
-        temperatura = adc_values;
-    }
-    usart_send_value(adc_values);  // Envía el valor del ADC por el puerto serial
+//     // Limpia el flag de transferencia completa
+     dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
 
 }
 
