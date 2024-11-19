@@ -4,10 +4,6 @@
 #include <task.h>
 #include <semphr.h>
 
-//#define configCHECK_FOR_STACK_OVERFLOW 1
-//#define configCHECK_FOR_STACK_OVERFLOW 0
-
-
 // Create a binary semaphore
 xSemaphoreHandle led_semaphore = NULL;
 
@@ -35,7 +31,7 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
 // Task to periodically give the semaphore
 static void task_semaphore_giver(void *args __attribute__((unused))) {
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Wait 1 second
+        vTaskDelay(pdMS_TO_TICKS(10)); // Wait 1 second
         xSemaphoreGive(led_semaphore);  // Give the semaphore
     }
 }
@@ -50,10 +46,16 @@ int main(void) {
 
     // Create the binary semaphore
     led_semaphore = xSemaphoreCreateBinary();
+    if (led_semaphore == NULL) {
+        while (1);  // Handle semaphore creation failure
+    }
+
+    // Optionally give semaphore initially
+    xSemaphoreGive(led_semaphore);
 
     // Create tasks
     xTaskCreate(task_led_control, "LED Control", configMINIMAL_STACK_SIZE, NULL,
-                tskIDLE_PRIORITY + 1, NULL);
+                tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(task_semaphore_giver, "Semaphore Giver", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY + 1, NULL);
 
