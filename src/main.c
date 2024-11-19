@@ -37,10 +37,12 @@
  * al pin B13.
  * 
  * Por lo tanto, ya queda conectado el sensor IR 08H y se envía correctamente mediante UART.
+ * 
+ * Se agrega semaforo que prenda el led amarillo (B13) en una task aparte.
  */
 #include "FreeRTOS.h"
 #include "semphr.h"
-#include "task.h"
+#include <task.h>
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/gpio.h>
@@ -50,6 +52,7 @@
 #include <libopencm3/stm32/usart.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <semphr.h>
 #include <string.h> // Incluir para usar strlen
 
 #include "lcd_i2c.h"
@@ -65,7 +68,6 @@
 #define PIN_SENSOR_MOVIMIENTO GPIOB, GPIO11  // B11 para la señal del sensor IR-08H
 #define PIN_LED_AMARILLO GPIOB, GPIO13       // B13 para el LED amarillo
 
-
 // variables Globales
 volatile float temperatura_C = 0, bateria_porcetaje = 0;
 volatile uint16_t temperatura = 0, porcentajeBateria = 0; // Valores RAW
@@ -76,18 +78,33 @@ uint16_t sensor_movimiento = 0;
 xSemaphoreHandle temp_semaforo = 0;
 xSemaphoreHandle bateria_semaforo = 0;
 xSemaphoreHandle movimiento_semaforo = 0;
+xSemaphoreHandle led_semaphore = NULL;
 
-// rutina para controlar el stack overflow
-void vApplicationStackOverflowHook(TaskHandle_t pxTask __attribute__((unused)),
-                                   char *pcTaskName __attribute__((unused))) {
-  while (1) {
-  }
+// void inicializar_semaforos() {
+//   temp_semaforo = xSemaphoreCreateMutex();
+//   bateria_semaforo = xSemaphoreCreateMutex();
+//   movimiento_semaforo = xSemaphoreCreateMutex();
+// }
+
+// Task to toggle the LED based on the semaphore
+static void task_led_control(void *args __attribute__((unused))) {
+    while (true) {
+        // Wait for the semaphore indefinitely
+        if (xSemaphoreTake(led_semaphore, portMAX_DELAY) == pdTRUE) {
+            // Toggle PC13 state
+            gpio_toggle(GPIOB, GPIO13);
+        }
+    }
 }
 
-void inicializar_semaforos() {
-  temp_semaforo = xSemaphoreCreateMutex();
-  bateria_semaforo = xSemaphoreCreateMutex();
-  movimiento_semaforo = xSemaphoreCreateMutex();
+// Hook function for stack overflow
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+    // Handle stack overflow
+    (void)xTask;      // Avoid unused parameter warning
+    (void)pcTaskName; // Avoid unused parameter warning
+
+    // Infinite loop for debugging purposes
+    while (1) {}
 }
 
 void configure_pins() {
@@ -205,12 +222,16 @@ static void task_sensor_movimiento(void *args __attribute__((unused))) {
     sensor_movimiento = gpio_get(GPIOB, GPIO11);  // Leer B11
 
     // Si el sensor detecta movimiento (asumimos que 1 es detección de movimiento)
-    if (sensor_movimiento) {
-      gpio_clear(GPIOB, GPIO13);  // Encender LED amarillo
-    } else {
-      gpio_set(GPIOB, GPIO13);  // Apagar LED amarillo
-    }
+    // if (sensor_movimiento) {
+    //   gpio_clear(GPIOB, GPIO13);  // Encender LED amarillo
+    // } else {
+    //   gpio_set(GPIOB, GPIO13);  // Apagar LED amarillo
+    // }
 
+    if (!sensor_movimiento) {
+      xSemaphoreGive(led_semaphore);  // Give the semaphore
+    }
+    
     vTaskDelay(pdMS_TO_TICKS(50));  // Esperar 100 ms antes de volver a leer
   }
 }
@@ -319,10 +340,14 @@ int main(void) {
   configure_pwm();
   lcd_init();
 
-  // ENCENDEMOS el led
-  gpio_set(GPIOC, GPIO13);
+  // Create the binary semaphore
+    led_semaphore = xSemaphoreCreateBinary();
+    if (led_semaphore == NULL) {
+        while (1);  // Handle semaphore creation failure
+    }
 
-  // xSemaphoreHandle semaforo_dma = xSemaphoreCreateMutex(); // ?
+  // Optionally give semaphore initially
+  //  xSemaphoreGive(led_semaphore);
 
   // creamos las tareas
   // xTaskCreate(task1, "LedSwitching", configMINIMAL_STACK_SIZE, NULL,
@@ -342,6 +367,14 @@ int main(void) {
 
   // creamos la tarea ADC
   xTaskCreate(task_sensor_movimiento, "Sensor", configMINIMAL_STACK_SIZE, NULL, tskLOW_PRIORITY, NULL);
+
+  // Create tasks
+  xTaskCreate(task_led_control, "LED Control", configMINIMAL_STACK_SIZE, NULL,
+                tskIDLE_PRIORITY + 2, NULL);
+
+  //xTaskCreate(task_semaphore_giver, "Semaphore Giver", configMINIMAL_STACK_SIZE,
+  //              NULL, tskIDLE_PRIORITY + 1, NULL);
+
 
   // iniciamos todas las tareas
   vTaskStartScheduler();
