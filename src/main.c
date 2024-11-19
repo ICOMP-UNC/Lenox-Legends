@@ -33,10 +33,14 @@ volatile uint32_t systick_Count=0;
 volatile uint16_t temperatura=0;
 //Varibables para logica de puerta
 volatile uint32_t contador_puerta=0;
-bool puerta_abierta;
-bool puerta_cerrada;
-bool puerta_abriendo;
-bool puerta_cerrando;
+
+enum EstadoPuerta{
+    ABRIENDO,
+    CERRANDO,
+    DETENIDA
+};
+
+enum EstadoPuerta estado_puerta=DETENIDA;
 
 bool modo=1; //0: manual, 1: automatico
 
@@ -80,6 +84,8 @@ void abrir_puerta();
 void cerrar_puerta();
 void parar_puerta();
 
+bool a=false;
+
 //implementaciones
 
 void systemInit(){
@@ -120,11 +126,12 @@ void exti_setup(){
 void exti4_isr(void){
     exti_reset_request(EXTI4);
     temperatura=0;
-    if(puerta_cerrada){
-        puerta_abriendo=true;
+    a=!a;
+    if(a){;
+        estado_puerta=ABRIENDO;
     }
     else{
-        puerta_cerrando=true;
+        estado_puerta=CERRANDO;
     }
 }
 
@@ -135,52 +142,39 @@ void sys_tick_handler(void){
         gpio_toggle(GPIOC, GPIO13);
         print_lcd();
     }
-    if(puerta_abriendo){
-        if(contador_puerta <= 6){
-            abrir_puerta();
+    //Logica de puerta
+    if(modo==1){
+        if(estado_puerta==ABRIENDO){
             contador_puerta++;
-        }
-        else{
-            parar_puerta();
-            contador_puerta=0;
-            puerta_abriendo=false;
-            puerta_abierta=true;
-        }
-    }
-    else{
-        if(puerta_cerrando){
-            if(contador_puerta <= 6){
-                cerrar_puerta();
-                contador_puerta++;
-            }
-            else{
+            abrir_puerta();
+            if(contador_puerta>TOGGLE_COUNT*6){
+                estado_puerta=DETENIDA;
                 parar_puerta();
                 contador_puerta=0;
-                puerta_cerrando=false;
-                puerta_cerrada=true;
+            }
+        }
+        else{
+            if(estado_puerta==CERRANDO){
+                contador_puerta++;
+                cerrar_puerta();
+                if(contador_puerta>TOGGLE_COUNT*6){
+                    estado_puerta=DETENIDA;
+                    parar_puerta();
+                    contador_puerta=0;
+                }
             }
         }
     }
 }
 
-void inicializar_puerta(){
-    puerta_abierta=false;
-    puerta_cerrada=true;
-    puerta_abriendo=false;
-    puerta_cerrando=false;
-}
 
 void abrir_puerta(){
-    if(!(puerta_abierta | modo==0)){
-        gpio_set(GPIOA, GPIO6);
-        gpio_clear(GPIOA, GPIO7);
-    }
+    gpio_clear(GPIOA, GPIO6);
+    gpio_set(GPIOA, GPIO7);
 }
 void cerrar_puerta(){
-    if(!(puerta_cerrada | modo==0)){
-        gpio_clear(GPIOA, GPIO6);
-        gpio_set(GPIOA, GPIO7);
-    }
+    gpio_set(GPIOA, GPIO6);
+    gpio_clear(GPIOA, GPIO7);
 }
 void parar_puerta(){
     gpio_clear(GPIOA, GPIO6);
@@ -207,9 +201,8 @@ int main(void)
     configure_pins();
     configure_systick();
     exti_setup();
-    inicializar_puerta();
     while (1)
     {
-        
+
     }
 }
