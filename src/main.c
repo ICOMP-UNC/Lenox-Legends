@@ -145,7 +145,7 @@ static void task_adc(void *args __attribute__((unused))) {
     while (!adc_eoc(ADC1)) { 
       // Espera el fin de conversión
     }
-    temperatura = adc_read_regular(ADC1) & 0xFFF; // Lee el valor de 12 bits
+   // temperatura = adc_read_regular(ADC1) & 0xFFF; // Lee el valor de 12 bits
 
     // Lectura del canal 1 (porcentaje de batería)
     adc_disable_scan_mode(ADC1); // Asegura que no esté en modo escaneo
@@ -154,7 +154,7 @@ static void task_adc(void *args __attribute__((unused))) {
     while (!adc_eoc(ADC1)) { 
       // Espera el fin de conversión
     }
-    porcentajeBateria = adc_read_regular(ADC1) & 0xFFF; // Lee el valor de 12 bits
+   // porcentajeBateria = adc_read_regular(ADC1) & 0xFFF; // Lee el valor de 12 bits
 
     // Verifica la temperatura y activa/desactiva alarma
     if (temperatura < UMBRAL_TEMP_C) { 
