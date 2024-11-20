@@ -35,8 +35,8 @@ xSemaphoreHandle i2c_semaphore = NULL;
 xSemaphoreHandle uart_semaphore = NULL;
 
 // variables Globales
-volatile uint16_t temperatura = 0;
-volatile uint16_t porcentajeBateria = 0;
+volatile uint16_t temperatura = 0, porcentajeBateria = 0;
+volatile float temperatura_C = 0, bateria_porcetaje = 0;
 uint8_t modo_sistema = 0;
 uint16_t sensor_movimiento = 0;
 
@@ -181,12 +181,14 @@ void configure_dma(void) {
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Envía las variables etiquetadas por UART
-    usart_send_labeled_value("A1",
-                             temperatura); // Envía adc_value1 con etiqueta "A1"
+
     usart_send_labeled_value(
-        "A2", porcentajeBateria); // Envía adc_value2 con etiqueta "A2"
+        "Bat",
+        porcentajeBateria); // Envía el valor del ADC por el puerto serial
     usart_send_labeled_value(
-        "V3", sensor_movimiento); // Envía variable3_uart con etiqueta "V3"
+        "Temp",
+        temperatura); // Envía el valor del ADC por el puerto serial
+
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -234,10 +236,10 @@ static void task_adc_dma(void *args __attribute__((unused))) {
  */
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
-    if (xSemaphoreTake(control_semaphore, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(i2c_semaphore, portMAX_DELAY) == pdTRUE) {
       modo_sistema = 0;
-      sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", temperatura,
-              porcentajeBateria);
+      sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", (int)temperatura_C,
+              (int)bateria_porcetaje);
       if (modo_sistema == 0) {
         sprintf(buffer_modo, "Modo: Auto", modo_sistema);
       } else {
@@ -247,7 +249,6 @@ static void task_i2c(void *args __attribute__((unused))) {
       lcd_print(buffer_temp_bateria);
       lcd_set_cursor(1, 0);
       lcd_print(buffer_modo);
-      // vTaskDelay(pdMS_TO_TICKS(1000));
     }
   }
 }
@@ -256,9 +257,20 @@ static void task_control(void *args __attribute__((unused))) {
   while (true) {
     if (xSemaphoreTake(control_semaphore, portMAX_DELAY) == pdTRUE) {
       gpio_toggle(GPIOC, GPIO13);
-    //   porcentajeBateria =
-    //       (uint16_t)(((uint32_t)porcentajeBateria * 4096) / 100);
-    //   temperatura = (uint16_t)(((uint32_t)temperatura * 4096) / 100);
+      temperatura_C = ((float)temperatura / 4095.0f) * 80.0f - 20.0f;
+
+      if (temperatura_C > 60.0f)
+        temperatura_C = 60.0f;
+      if (temperatura_C < -20.0f)
+        temperatura_C = 0.0f;
+
+      bateria_porcetaje = (float)porcentajeBateria * (100.0f / 4095.0f);
+
+      // Limitar el valor del porcentaje de batería a un máximo de 100%
+      if (bateria_porcetaje > 100.0f)
+        bateria_porcetaje = 100.0f;
+      if (bateria_porcetaje < 0.0f)
+        bateria_porcetaje = 0.0f;
 
       xSemaphoreGive(i2c_semaphore); // Give the semaphore from I2C
     }
@@ -315,12 +327,6 @@ void adc1_2_isr(void) {
 void dma1_channel1_isr(void) {
   //     // Limpia el flag de transferencia completa
   dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
-  usart_send_labeled_value(
-      "Bat:",
-      porcentajeBateria); // Envía el valor del ADC por el puerto serial
-  usart_send_labeled_value(
-      "Temp:",
-      temperatura); // Envía el valor del ADC por el puerto serial
   xSemaphoreGiveFromISR(control_semaphore, NULL); // Give the semaphore from ISR
 }
 
@@ -347,13 +353,12 @@ int main(void) {
 
   configure_pins();
   configure_usart();
-  adc_start_conversion_direct(ADC1);
-
-  // Create the binary semaphore
   configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
   configure_adc();
   configure_dma();
   lcd_init();
+
+  adc_start_conversion_direct(ADC1);
 
   // Optionally give semaphore initially
   // xSemaphoreGive(adc_dma_semaphore);
