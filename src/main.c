@@ -50,8 +50,8 @@ xSemaphoreHandle temp_semaforo = 0;
 xSemaphoreHandle bateria_semaforo = 0;
 xSemaphoreHandle movimiento_semaforo = 0;
 
-char buffer_temp_bateria[32];
-char buffer_modo[32];
+char buffer_temp_bateria[20];
+char buffer_modo[20];
 
 // -------------------------------------- Configuración
 // ------------------------------------------------
@@ -239,7 +239,8 @@ static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     if (xSemaphoreTake(i2c_semaphore, portMAX_DELAY) == pdTRUE) {
       modo_sistema = 0;
-      sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", (int)temperatura_C,
+      //lcd_clear();
+      sprintf(buffer_temp_bateria, "Temp:%3d Bat:%3d", (int)temperatura_C,
               (int)bateria_porcetaje);
       if (modo_sistema == 0) {
         sprintf(buffer_modo, "Modo: Auto", modo_sistema);
@@ -250,6 +251,7 @@ static void task_i2c(void *args __attribute__((unused))) {
       lcd_print(buffer_temp_bateria);
       lcd_set_cursor(1, 0);
       lcd_print(buffer_modo);
+
     }
   }
 }
