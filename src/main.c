@@ -12,6 +12,7 @@
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/dma.h>
+#include <libopencm3/stm32/exti.h>
 #include <stdint.h>
 #include <stdio.h>
 #include "lcd_i2c.h"
@@ -39,6 +40,24 @@ volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
 volatile uint16_t Timer_UART_Count = 0;
 volatile bool REINICIO = 1;
 volatile bool flag_UART = 1; // bandera para enviar datos por UART
+//exti
+#define FALLING 0
+#define RISING 1
+
+static uint16_t exti_direction=FALLING;
+
+//Varibables para logica de puerta
+volatile uint32_t contador_puerta=0;
+
+enum EstadoPuerta{
+    ABRIENDO,
+    CERRANDO,
+    DETENIDA
+};
+
+enum EstadoPuerta estado_puerta=DETENIDA;
+
+bool modo=1; //0: manual, 1: automatico
 
 char buffer[BUFFER_SIZE];
 
@@ -143,14 +162,13 @@ void dma1_channel1_isr(void);
  */
 void tim3_isr(void);
 
-/*
- * @brief Envía los datos por USART
- *
- * @return void
- */
-void enviar_sados(void);
+void abrir_puerta();
+void cerrar_puerta();
+void parar_puerta();
 
-// implementaciones
+bool a=false;
+
+//implementaciones
 
 void systemInit()
 {
@@ -165,7 +183,16 @@ void configure_pins()
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1);
   gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
 
-  // TODO: Agregar configuración de los pines
+    //pines para la puerta
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO6);
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO7);
+    gpio_clear(GPIOA, GPIO6);
+    gpio_clear(GPIOA, GPIO7);
+
+    //pines para el boton de modo
+    gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO4);
+
+    // TODO: Agregar configuración de los pines
 }
 
 void configure_systick(void)
@@ -174,6 +201,24 @@ void configure_systick(void)
   systick_set_reload(RELOAD_COUNT);
   systick_interrupt_enable();
   systick_counter_enable();
+}
+void exti_setup(){
+    rcc_periph_clock_enable(RCC_AFIO);
+    nvic_enable_irq(NVIC_EXTI4_IRQ);
+    exti_select_source(EXTI4, GPIO4);
+    exti_set_trigger(EXTI4, EXTI_TRIGGER_FALLING);
+    exti_enable_request(EXTI4);
+}
+void exti4_isr(void){
+    exti_reset_request(EXTI4);
+    temperatura=0;
+    a=!a;
+    if(a){;
+        estado_puerta=ABRIENDO;
+    }
+    else{
+        estado_puerta=CERRANDO;
+    }
 }
 
 void configure_timer(void)
@@ -261,11 +306,68 @@ void configure_usart(void)
   usart_set_parity(USART1, USART_PARITY_NONE);
   usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
   usart_enable(USART1);
+
+void sys_tick_handler(void){
+    systick_Count++;
+    if(systick_Count > TOGGLE_COUNT){
+        systick_Count = 0;
+        gpio_toggle(GPIOC, GPIO13);
+        print_lcd();
+    }
+    //Logica de puerta
+    if(modo==1){
+        if(estado_puerta==ABRIENDO){
+            contador_puerta++;
+            abrir_puerta();
+            if(contador_puerta>TOGGLE_COUNT*6){
+                estado_puerta=DETENIDA;
+                parar_puerta();
+                contador_puerta=0;
+            }
+        }
+        else{
+            if(estado_puerta==CERRANDO){
+                contador_puerta++;
+                cerrar_puerta();
+                if(contador_puerta>TOGGLE_COUNT*6){
+                    estado_puerta=DETENIDA;
+                    parar_puerta();
+                    contador_puerta=0;
+                }
+            }
+        }
+    }
+}
+
+
+void abrir_puerta(){
+    gpio_clear(GPIOA, GPIO6);
+    gpio_set(GPIOA, GPIO7);
+}
+void cerrar_puerta(){
+    gpio_set(GPIOA, GPIO6);
+    gpio_clear(GPIOA, GPIO7);
+}
+void parar_puerta(){
+    gpio_clear(GPIOA, GPIO6);
+    gpio_clear(GPIOA, GPIO7);
+}
+void print_lcd(){
+    //preparamos las cosas para imprimir
+    temperatura++;
+    sprintf(buffer,"Temp: %d",temperatura);
+    lcd_clear();
+    lcd_set_cursor(0,0);
+    lcd_print(buffer);
+
+    //preparamos modo:
+    sprintf(buffer,"Mode: %d",modo);
+    lcd_set_cursor(1,0);
+    lcd_print(buffer);
 }
 
 int main(void)
 {
-
   systemInit();
   lcd_init();
   configure_pins();
@@ -274,6 +376,7 @@ int main(void)
   configure_adc();
   configure_dma();
   configure_usart();
+  exti_setup();
   while (1)
   {
     if (flag_UART)
@@ -307,16 +410,6 @@ void print_lcd()
   sprintf(buffer, "Mode: %d", 0);
   lcd_set_cursor(1, 0);
   lcd_print(buffer);
-}
-
-void sys_tick_handler(void)
-{
-  systick_Count++;
-  if (systick_Count > TOGGLE_COUNT)
-  {
-    systick_Count = 0;
-    print_lcd();
-  }
 }
 
 void tim2_isr(void)
