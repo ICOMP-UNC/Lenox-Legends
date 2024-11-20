@@ -62,11 +62,6 @@ volatile bool Puerta=1;
 
 char buffer[BUFFER_SIZE];
 
-// SEMAFOROS
-xSemaphoreHandle temp_semaforo = 0;
-xSemaphoreHandle bateria_semaforo = 0;
-xSemaphoreHandle movimiento_semaforo = 0;
-
 char buffer_temp_bateria[20];
 char buffer_modo[24];
 
