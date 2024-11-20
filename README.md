@@ -14,7 +14,6 @@ Se implemento la actividad propuesta por el profesor.
 ![alt text](<img/Esquematico.SVG>)
 
 ## Diagrama de flujos para el código sin FreeRTOS
-Diagrama secuencial SIN FREERTOS
 ```mermaid
 sequenceDiagram
     participant Sistema as Sistema
