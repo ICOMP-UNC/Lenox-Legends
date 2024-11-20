@@ -391,9 +391,9 @@ void print_lcd()
   lcd_print(buffer);
 
   if (modo == 0) {
-        sprintf(buffer, "Modo: %-6s","Auto");
-      } else {
         sprintf(buffer, "Modo: %-6s","Manual");
+      } else {
+        sprintf(buffer, "Modo: %-6s","Auto");
       }
 
   // preparamos modo:
@@ -405,7 +405,7 @@ void tim2_isr(void)
 {
   Timer_Batery_Count = Timer_Batery_Count + 1;
   Timer_UART_Count++;
-  if (Timer_UART_Count > 30)
+  if (Timer_UART_Count > 10)
   {
     flag_UART = 1;
     Timer_UART_Count = 0;
