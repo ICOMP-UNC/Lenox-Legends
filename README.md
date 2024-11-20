@@ -14,11 +14,12 @@ Se implemento la actividad propuesta por el profesor.
 ![alt text](<circuito/Project Backups/Esquematico.SVG>)
 
 ## Diagrama de flujos para el código sin FreeRTOS
-
+![alt text](<img/Diagrama_Secuencia.jpg>)
 
 ## Diagrama de secuencias para el código con FreeRTOS
 
 
 ## Imagen del circuito 
+![alt text](<img/Circuito_Funcionando.jpeg>)
 
 
