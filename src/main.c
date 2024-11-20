@@ -29,7 +29,8 @@
 #define BUFFER_SIZE 16
 // ------------------------- Variables   ------------------------------
 // Create a binary semaphore
-xSemaphoreHandle led_semaphore = NULL;
+xSemaphoreHandle adc_dma_semaphore = NULL;
+xSemaphoreHandle control_semaphore = NULL;
 
 // variables Globales
 volatile uint16_t temperatura = 0;
@@ -50,7 +51,8 @@ xSemaphoreHandle movimiento_semaforo = 0;
 char buffer_temp_bateria[32];
 char buffer_modo[32];
 
-// -------------------------------------- Configuración ------------------------------------------------
+// -------------------------------------- Configuración
+// ------------------------------------------------
 /**
  * Función para configurar los pines.
  */
@@ -113,12 +115,13 @@ void configure_adc(void) {
   adc_set_sample_time(ADC1, ADC_CHANNEL0, ADC_SMPR_SMP_1DOT5CYC); // Canal 0
   adc_set_sample_time(ADC1, ADC_CHANNEL1, ADC_SMPR_SMP_1DOT5CYC); // Canal 1
   // Configura la secuencia regular de canales
-  adc_set_regular_sequence(ADC1, 1,(uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1  /
+  adc_set_regular_sequence(
+      ADC1, 1, (uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1  /
 
   // Habilita la interrupción de fin de conversión (EOC) del ADC
   adc_enable_eoc_interrupt(ADC1);
   // Habilita la interrupción del ADC en el NVIC
-  nvic_enable_irq(NVIC_ADC1_2_IRQ); 
+  nvic_enable_irq(NVIC_ADC1_2_IRQ);
 
   // Configura el ADC para que dispare la transferencia de datos
   adc_enable_dma(ADC1); // Habilita DMA (si es necesario)
@@ -168,7 +171,8 @@ void configure_dma(void) {
   dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
 }
 
-//------------------- Tareas --------------------------------------------------------------------
+//------------------- Tareas
+//--------------------------------------------------------------------
 /**
  * Tarea que permite la comunicación UART entre la placa y la computadora.
  */
@@ -191,8 +195,7 @@ static void task_uart(void *args __attribute__((unused))) {
 static void task_adc_dma(void *args __attribute__((unused))) {
   while (true) {
     // Wait for the semaphore indefinitely
-    if (xSemaphoreTake(led_semaphore, portMAX_DELAY) == pdTRUE) {
-      gpio_toggle(GPIOC, GPIO13);
+    if (xSemaphoreTake(adc_dma_semaphore, portMAX_DELAY) == pdTRUE) {
       adc_power_off(ADC1); // Apaga el ADC para configurarlo
       dma_disable_channel(DMA1,
                           DMA_CHANNEL1); // Deshabilita el canal 1 del DMA1
@@ -203,15 +206,19 @@ static void task_adc_dma(void *args __attribute__((unused))) {
         adc_set_regular_sequence(
             ADC1, 1,
             (uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1
-        dma_set_memory_address(DMA1, DMA_CHANNEL1,
-                               &porcentajeBateria);       // Dirección de memoria destino
+        dma_set_memory_address(
+            DMA1, DMA_CHANNEL1,
+            &porcentajeBateria);                // Dirección de memoria destino
         adc_power_on(ADC1);                     // Enciende el ADC
         adc_start_conversion_direct(ADC1);      // Inicia la conversión
         dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
         Timer_Batery_Count = 0;
       } else {
-        adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL0}); // Secuencia de 1 canal: canal 1
-        dma_set_memory_address(DMA1, DMA_CHANNEL1,&temperatura); // Dirección de memoria destino
+        adc_set_regular_sequence(
+            ADC1, 1,
+            (uint8_t[]){ADC_CHANNEL0}); // Secuencia de 1 canal: canal 1
+        dma_set_memory_address(DMA1, DMA_CHANNEL1,
+                               &temperatura); // Dirección de memoria destino
         adc_power_on(ADC1);                   // Enciende el ADC
         adc_start_conversion_direct(ADC1);
         dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
@@ -226,7 +233,8 @@ static void task_adc_dma(void *args __attribute__((unused))) {
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     modo_sistema = 0;
-    sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", temperatura, porcentajeBateria);
+    sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", temperatura,
+            porcentajeBateria);
     if (modo_sistema == 0) {
       sprintf(buffer_modo, "Modo: Auto", modo_sistema);
     } else {
@@ -236,7 +244,15 @@ static void task_i2c(void *args __attribute__((unused))) {
     lcd_print(buffer_temp_bateria);
     lcd_set_cursor(1, 0);
     lcd_print(buffer_modo);
-   // vTaskDelay(pdMS_TO_TICKS(1000));
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+static void task_control(void *args __attribute__((unused))) {
+  while (true) {
+    if (xSemaphoreTake(control_semaphore, portMAX_DELAY) == pdTRUE) {
+      gpio_toggle(GPIOC, GPIO13);
+    }
   }
 }
 
@@ -261,14 +277,15 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
   }
 }
 
-// --------------------------------------- Interrupciones -------------------------------
+// --------------------------------------- Interrupciones
+// -------------------------------
 /**
  * Manejo de la interrupción para el timer 2.
  */
 void tim2_isr(void) {
   if (timer_get_flag(TIM2, TIM_SR_UIF)) {       // Check for update interrupt
     timer_clear_flag(TIM2, TIM_SR_UIF);         // Clear the interrupt flag
-    xSemaphoreGiveFromISR(led_semaphore, NULL); // Give the semaphore from ISR
+    xSemaphoreGiveFromISR(adc_dma_semaphore, NULL); // Give the semaphore from ISR
   }
 }
 
@@ -294,30 +311,38 @@ void dma1_channel1_isr(void) {
   usart_send_labeled_value(
       "Temp:",
       temperatura); // Envía el valor del ADC por el puerto serial
+  xSemaphoreGiveFromISR(control_semaphore, NULL); // Give the semaphore from ISR
 }
 
 // -------------------------------- Funcion principal ---------------------
 int main(void) {
   configure_pins();
   configure_usart();
-  configure_adc();
-  configure_dma();
 
   lcd_init();
-  
+
   adc_start_conversion_direct(ADC1);
 
   // Create the binary semaphore
-  led_semaphore = xSemaphoreCreateBinary();
-  if (led_semaphore == NULL) {
+  adc_dma_semaphore = xSemaphoreCreateBinary();
+  if (adc_dma_semaphore == NULL) {
     while (1)
       ; // Handle semaphore creation failure
   }
 
   configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
 
+  control_semaphore = xSemaphoreCreateBinary();
+  if (control_semaphore == NULL) {
+    while (1)
+      ; // Handle semaphore creation failure
+  }
+
+  configure_adc();
+  configure_dma();
+
   // Optionally give semaphore initially
-  // xSemaphoreGive(led_semaphore);
+  // xSemaphoreGive(adc_dma_semaphore);
 
   // Create tasks
   xTaskCreate(task_adc_dma, "LED Control", configMINIMAL_STACK_SIZE, NULL,
@@ -327,6 +352,9 @@ int main(void) {
               tskIDLE_PRIORITY + 2, NULL);
 
   xTaskCreate(task_i2c, "I2C", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+
+  xTaskCreate(task_control, "control", configMINIMAL_STACK_SIZE, NULL,
               tskIDLE_PRIORITY + 2, NULL);
 
   // Start the scheduler
