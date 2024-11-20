@@ -3,6 +3,12 @@
  * @brief Programa principal del proyecto
  *
  */
+
+// Librerias std
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+// Librerias libopencm3
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/i2c.h>
 #include <libopencm3/stm32/rcc.h>
@@ -13,162 +19,56 @@
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/exti.h>
-#include <stdint.h>
-#include <stdio.h>
+
+// Librerias Auxiliares
 #include "lcd_i2c.h"
 
-// Definiciones para el systick
-#define RELOAD_COUNT 8999
-#define TOGGLE_COUNT 500
+#define RELOAD_COUNT 8999 // Reload Count para systick
+#define TOGGLE_COUNT 500  // systick cada 500 ms
 // Definiciones para el timer
-#define TIMER_PRESCALER 7199     // prescaler para 10khz
-#define TIMER_PERIOD_ADC 9999    // periodo para 1khz
-#define TIMER_PERIOD_UART 299999 // periodo para 30 seg
-#define BATERY_SENSE_TIME 15     // 1Leeremos la bateria cada 10 seg;
+#define TIMER_PRESCALER 7199  // prescaler para 10khz
+#define TIMER_PERIOD_ADC 9999 // periodo para 1khz
+#define BATERY_SENSE_TIME 15  // 1Leeremos la bateria cada 15 seg;
 // Definiciones para el USART
-#define USART_BAUDRATE 9600
-#define USART_DATABITS 8
+#define USART_BAUDRATE 9600 // Baudrate 9600
+#define USART_DATABITS 8    // 8 bits de datos
 
-// magic numbers
+// Definiciones para la LCD
 #define BUFFER_SIZE 16
 
-// variables globales
-volatile uint32_t systick_Count = 0;
-volatile uint16_t temperatura = 0;
-volatile uint16_t bateria = 0;
-volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
-volatile uint16_t Timer_UART_Count = 0;
-volatile bool REINICIO = 1;
-volatile bool flag_UART = 1; // bandera para enviar datos por UART
-//exti
+// exti
 #define FALLING 0
 #define RISING 1
 
-static uint16_t exti_direction=FALLING;
+#define MAX_COUNT 10000
+#define ADC_MAX_VALUE 4095
 
-//Varibables para logica de puerta
-volatile uint32_t contador_puerta=0;
-
-enum EstadoPuerta{
-    ABRIENDO,
-    CERRANDO,
-    DETENIDA
+// Enum para el estado de la puerta
+enum EstadoPuerta
+{
+  ABRIENDO,
+  CERRANDO,
+  DETENIDA
 };
 
-enum EstadoPuerta estado_puerta=DETENIDA;
+// variables globales
+volatile uint32_t systick_Count = 0;      // Contador de systick para el control de tiempo
+volatile uint16_t temperatura = 0;        // Variable para almacenar la temperatura
+volatile uint16_t bateria = 0;            // Variable para almacenar la bateria
+volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
+volatile uint16_t Timer_UART_Count = 0;   // contador para mostrar UART
+volatile bool flag_UART = 1;              // bandera para enviar datos por UART
+volatile bool alarma = false;             // bandera de control para la ALARMA
+// Varibables para logica de puerta
+volatile uint32_t contador_puerta = 0;
 
-bool modo=1; //0: manual, 1: automatico
+enum EstadoPuerta estado_puerta = DETENIDA;
+
+bool modo = 1; // 0: manual, 1: automatico
+
+bool sensorMovimiento=false;
 
 char buffer[BUFFER_SIZE];
-
-// prototipos de funciones
-/*
- * @brief Inicializa el sistema
- *
- * @return void
- */
-void systemInit(void);
-
-/*
- * @brief Configura los pines
- *
- * @return void
- */
-void configure_pins(void);
-
-/*
- * @brief Configura el systick
- *
- * @return void
- */
-void configure_systick(void);
-/*
- * @brief Imprime en el LCD
- *
- * @return void
- */
-void print_lcd(void);
-
-/*
- * @brief Envía un valor por USART
- *
- * @param value Valor a enviar
- * @return void
- */
-void usart_send_value(const char *label, uint16_t value);
-
-/*
- * @brief Configura el ADC
- *
- * @return void
- */
-void configure_adc(void);
-
-/*
- * @brief Configura el timer
- *
- * @return void
- */
-void configure_timer(void);
-
-/*
- * @brief Configura el DMA
- *
- * @return void
- */
-void configure_dma(void);
-
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void configure_usart(void);
-
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void usart_send_value(const char *label, uint16_t value);
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void sys_tick_handler(void);
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void tim2_isr(void);
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void adc1_2_isr(void);
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void dma1_channel1_isr(void);
-/*
- * @brief Configura el USART
- *
- * @return void
- */
-void tim3_isr(void);
-
-void abrir_puerta();
-void cerrar_puerta();
-void parar_puerta();
-
-bool a=false;
-
-//implementaciones
 
 void systemInit()
 {
@@ -177,48 +77,102 @@ void systemInit()
 
 void configure_pins()
 {
-  rcc_periph_clock_enable(RCC_GPIOC);
+  //Habilitacion de reloj de puertos
   rcc_periph_clock_enable(RCC_GPIOA);
+  rcc_periph_clock_enable(RCC_GPIOB);
+  rcc_periph_clock_enable(RCC_GPIOC);
+
+  //configuracion pin PWM
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO9);
+
+  //Configuracion Led 13
   gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+  gpio_clear(GPIOC, GPIO13);
+  
+  //Configuracion entrada ADC
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO0 | GPIO1);
-  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX
 
-    //pines para la puerta
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO6);
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO7);
-    gpio_clear(GPIOA, GPIO6);
-    gpio_clear(GPIOA, GPIO7);
+  //configuracion de pines USART
+  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX); // Configura PA9 como TX7
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO_USART1_RX);                 // Configura PA10 como RX7
 
-    //pines para el boton de modo
-    gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO4);
+  //configuracion de pines para la puerta
+  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO6);
+  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO7);
+  gpio_clear(GPIOA, GPIO6);
+  gpio_clear(GPIOA, GPIO7);
 
-    // TODO: Agregar configuración de los pines
+  //configuracion pin para Boton de Modo
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO4);
+
+  //configuracion pin para sensor movimiento
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO3);
+
+  //configuracion de pin para el Buzzer de la alarma
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO8);
+  gpio_clear(GPIOB, GPIO8);
 }
 
 void configure_systick(void)
 {
-  systick_set_clocksource(STK_CSR_CLKSOURCE_AHB_DIV8);
-  systick_set_reload(RELOAD_COUNT);
-  systick_interrupt_enable();
-  systick_counter_enable();
+  systick_set_clocksource(STK_CSR_CLKSOURCE_AHB_DIV8);  // Reloj del sistema de 36 MHz
+  systick_set_reload(RELOAD_COUNT); // Reload Count para systick
+  systick_interrupt_enable(); // Habilita la interrupción del systick
+  systick_counter_enable(); // Habilita el contador del systick
 }
-void exti_setup(){
-    rcc_periph_clock_enable(RCC_AFIO);
-    nvic_enable_irq(NVIC_EXTI4_IRQ);
-    exti_select_source(EXTI4, GPIO4);
-    exti_set_trigger(EXTI4, EXTI_TRIGGER_FALLING);
-    exti_enable_request(EXTI4);
+void configure_pwm(){
+  /* Configuración del TIM4 para PWM centrado */
+  rcc_periph_clock_enable(RCC_TIM4);
+  timer_set_mode(TIM4,                 // Timer general 4
+                 TIM_CR1_CKD_CK_INT,   // Clock interno como fuente
+                 TIM_CR1_CMS_CENTER_1, // Modo centrado
+                 TIM_CR1_DIR_UP);      // Dirección del conteo hacia arriba
+
+  timer_set_period(TIM4, MAX_COUNT - 1); // 72M/2/10000 = 3,6kHz
+
+  // Configura el canal PWM para el LED en PB7
+  timer_set_oc_mode(TIM4, TIM_OC4, TIM_OCM_PWM1); // PWM1: activo alto
+  timer_enable_oc_output(TIM4, TIM_OC4);          // Habilitar salida OC2
+
+  // Activa el contador del timer
+  timer_enable_counter(TIM4);
 }
-void exti4_isr(void){
-    exti_reset_request(EXTI4);
-    temperatura=0;
-    a=!a;
-    if(a){;
-        estado_puerta=ABRIENDO;
-    }
-    else{
-        estado_puerta=CERRANDO;
-    }
+void exti_setup()
+{
+  rcc_periph_clock_enable(RCC_AFIO);  // Habilita el reloj para AFIO
+  nvic_enable_irq(NVIC_EXTI4_IRQ);  // Habilita la interrupción del EXTI4 en el NVIC
+  exti_select_source(EXTI4, GPIO4); // Selecciona el pin AO4 como fuente de interrupción
+  exti_set_trigger(EXTI4, EXTI_TRIGGER_FALLING);  // Configura el trigger de la interrupción
+  exti_enable_request(EXTI4); // Habilita la solicitud de interrupción
+
+  nvic_enable_irq(NVIC_EXTI3_IRQ);  // Habilita la interrupción del EXTI4 en el NVIC
+  exti_select_source(EXTI3, GPIO3); // Selecciona el pin AO4 como fuente de interrupción
+  exti_set_trigger(EXTI3, EXTI_TRIGGER_BOTH);  // Configura el trigger de la interrupción
+  exti_enable_request(EXTI3); // Habilita la solicitud de interrupción
+}
+void exti4_isr(void)
+{
+  exti_reset_request(EXTI4);  // Limpia la solicitud de interrupción
+
+  if (modo)
+  {
+    modo = 0;
+  }
+  else
+  {
+    modo = 1;
+  }
+}
+void exti3_isr(void)
+{
+  exti_reset_request(EXTI3);  // Limpia la solicitud de interrupción
+  delay_ms(100);
+  if(gpio_get(GPIOA, GPIO3)){
+    sensorMovimiento=true;
+  }
+  else{
+    sensorMovimiento=false;
+  }
 }
 
 void configure_timer(void)
@@ -307,50 +261,85 @@ void configure_usart(void)
   usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
   usart_enable(USART1);
 }
-void sys_tick_handler(void){
-    systick_Count++;
-    if(systick_Count > TOGGLE_COUNT){
-        systick_Count = 0;
-        gpio_toggle(GPIOC, GPIO13);
-        print_lcd();
+void sys_tick_handler(void)
+{
+  systick_Count++;
+  if (systick_Count > TOGGLE_COUNT)
+  {
+    systick_Count = 0;
+    print_lcd();
+  }
+  // Logica de puerta
+  if (modo == 1)
+  {
+    if (estado_puerta == ABRIENDO)
+    {
+      contador_puerta++;
+      abrir_puerta();
+      if (contador_puerta > TOGGLE_COUNT * 6)
+      {
+        estado_puerta = DETENIDA;
+        parar_puerta();
+        contador_puerta = 0;
+      }
     }
-    //Logica de puerta
-    if(modo==1){
-        if(estado_puerta==ABRIENDO){
-            contador_puerta++;
-            abrir_puerta();
-            if(contador_puerta>TOGGLE_COUNT*6){
-                estado_puerta=DETENIDA;
-                parar_puerta();
-                contador_puerta=0;
-            }
+    else
+    {
+      if (estado_puerta == CERRANDO)
+      {
+        contador_puerta++;
+        cerrar_puerta();
+        if (contador_puerta > TOGGLE_COUNT * 6)
+        {
+          estado_puerta = DETENIDA;
+          parar_puerta();
+          contador_puerta = 0;
         }
-        else{
-            if(estado_puerta==CERRANDO){
-                contador_puerta++;
-                cerrar_puerta();
-                if(contador_puerta>TOGGLE_COUNT*6){
-                    estado_puerta=DETENIDA;
-                    parar_puerta();
-                    contador_puerta=0;
-                }
-            }
-        }
+      }
     }
+  }
 }
 
+void abrir_puerta()
+{
+  gpio_clear(GPIOA, GPIO6);
+  gpio_set(GPIOA, GPIO7);
+}
+void cerrar_puerta()
+{
+  gpio_set(GPIOA, GPIO6);
+  gpio_clear(GPIOA, GPIO7);
+}
+void parar_puerta()
+{
+  gpio_clear(GPIOA, GPIO6);
+  gpio_clear(GPIOA, GPIO7);
+}
+void activarAlarma()
+{
+  gpio_set(GPIOB, GPIO8);
+  delay_ms(250);
+  gpio_clear(GPIOB, GPIO8);
+  delay_ms(250);
+}
 
-void abrir_puerta(){
-    gpio_clear(GPIOA, GPIO6);
-    gpio_set(GPIOA, GPIO7);
-}
-void cerrar_puerta(){
-    gpio_set(GPIOA, GPIO6);
-    gpio_clear(GPIOA, GPIO7);
-}
-void parar_puerta(){
-    gpio_clear(GPIOA, GPIO6);
-    gpio_clear(GPIOA, GPIO7);
+bool bandera=true;
+void procesarDatos(uint16_t temp, bool sensorMovimiento)
+{
+  if (temp > 2048 || sensorMovimiento)
+  {
+    activarAlarma();
+    if(bandera && modo){
+      estado_puerta=CERRANDO;
+      bandera=false;
+    }
+  }
+  else{
+    if(!bandera && modo){
+      estado_puerta=ABRIENDO;
+      bandera=true;
+    }
+  }
 }
 
 int main(void)
@@ -371,6 +360,7 @@ int main(void)
       enviar_sados();
       flag_UART = 0;
     }
+    procesarDatos(temperatura, sensorMovimiento);
   }
 }
 
@@ -394,7 +384,7 @@ void print_lcd()
   lcd_print(buffer);
 
   // preparamos modo:
-  sprintf(buffer, "Mode: %d", 0);
+  sprintf(buffer, "Mode: %d", modo);
   lcd_set_cursor(1, 0);
   lcd_print(buffer);
 }
@@ -415,10 +405,9 @@ void tim2_isr(void)
     dma_disable_channel(DMA1, DMA_CHANNEL1); // Deshabilita el canal 1 del DMA1
 
     // Verifica si el contador es mayor a 5
-    if (((REINICIO) || Timer_Batery_Count == BATERY_SENSE_TIME))
+    if ((Timer_Batery_Count == BATERY_SENSE_TIME))
     {
       Timer_Batery_Count = 0;
-      REINICIO = 0;
       adc_set_regular_sequence(ADC1, 1, (uint8_t[]){ADC_CHANNEL1}); // Secuencia de 1 canal: canal 1
       dma_set_memory_address(DMA1, DMA_CHANNEL1, &bateria);         // Dirección de memoria destino
       adc_power_on(ADC1);                                           // Enciende el ADC
@@ -451,6 +440,9 @@ void dma1_channel1_isr(void)
 {
   //     // Limpia el flag de transferencia completa
   dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
+  uint16_t pwm_val = (bateria * MAX_COUNT) / ADC_MAX_VALUE;
+  timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
+
   //  usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
   //  usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
 }
