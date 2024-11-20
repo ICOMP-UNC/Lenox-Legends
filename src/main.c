@@ -203,7 +203,7 @@ void configure_pwm(void) {
 
   // Configura el canal PWM para el LED en PB7
   timer_set_oc_mode(TIM4, TIM_OC4, TIM_OCM_PWM1); // PWM1: activo alto
-  timer_enable_oc_output(TIM4, TIM_OC4);          // Habilitar salida OC2
+  timer_enable_oc_output(TIM4, TIM_OC4);          // Habilitar salida OC4
 
   // Activa el contador del timer
   timer_enable_counter(TIM4);
@@ -396,32 +396,28 @@ void dma1_channel1_isr(void) {
   xSemaphoreGiveFromISR(control_semaphore, NULL); // Give the semaphore from ISR
 }
 
+/**
+ * Función que permite inicializar los semaforos.
+ * Tener en cuenta que se deben inicializar los semaforos antes de que las funciones
+ * los vayan a utilizar.
+ */
+void inicializacion_semanforos(void)
+{
+  i2c_semaphore = xSemaphoreCreateBinary();
+  adc_dma_semaphore = xSemaphoreCreateBinary();
+  control_semaphore = xSemaphoreCreateBinary();
+  alarma_semaphore = xSemaphoreCreateBinary();
+
+  if (i2c_semaphore == NULL || adc_dma_semaphore == NULL || control_semaphore == NULL || alarma_semaphore == NULL) {
+    while (1)
+      ; // Handle semaphore creation failure
+  }
+}
+
 // -------------------------------- Funcion principal ---------------------
 int main(void) {
 
-  i2c_semaphore = xSemaphoreCreateBinary();
-  if (i2c_semaphore == NULL) {
-    while (1)
-      ; // Handle semaphore creation failure
-  }
-
-  adc_dma_semaphore = xSemaphoreCreateBinary();
-  if (adc_dma_semaphore == NULL) {
-    while (1)
-      ; // Handle semaphore creation failure
-  }
-
-  control_semaphore = xSemaphoreCreateBinary();
-  if (control_semaphore == NULL) {
-    while (1)
-      ; // Handle semaphore creation failure
-  }
-
-  alarma_semaphore = xSemaphoreCreateBinary();
-  if (alarma_semaphore == NULL) {
-    while (1)
-      ; // Handle semaphore creation failure
-  }
+  inicializacion_semanforos();
 
   configure_pins();
   configure_usart();
