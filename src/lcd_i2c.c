@@ -50,28 +50,28 @@ void lcd_init(void) {
     i2c_set_ccr(I2C_BUS, 180);                   // Calculado para 100 kHz con 36 MHz de reloj
     i2c_set_trise(I2C_BUS, 37);                  // Tiempo de subida para 100 kHz en 36 MHz
     i2c_peripheral_enable(I2C_BUS);              // Activa I2C
-    delay_ms(5);
+    delay_ms(1);
     // Secuencia de inicialización del LCD
     lcd_send_nibble(0x03, 0); // Inicio en modo de 8 bits7
-    delay_ms(5);
+    delay_ms(1);
     lcd_send_nibble(0x03, 0);
-    delay_ms(5);
+    delay_ms(1);
     lcd_send_nibble(0x03, 0);
-    delay_ms(5);
+    delay_ms(1);
     lcd_send_nibble(0x02, 0); // Cambia a modo de 4 bits
-    delay_ms(5);
+    delay_ms(1);
 
     // Configuración del LCD en modo 4 bits, 2 líneas, y texto de 5x8 puntos
     lcd_command(0x28); // Modo de 4 bits, 2 líneas
-    delay_ms(5);
+    delay_ms(1);
     lcd_command(0x08); // Apagar display
-    delay_ms(5);
+    delay_ms(1);
     lcd_command(0x01); // Limpiar display
-    delay_ms(5);
+    delay_ms(1);
     lcd_command(0x06); // Configuración de entrada
-    delay_ms(5);
+    delay_ms(1);
     lcd_command(0x0C); // Encender display, sin cursor
-    delay_ms(5);
+    delay_ms(1);
 }
 
 void lcd_set_cursor(uint8_t row, uint8_t col) {
