@@ -7,10 +7,13 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
+#include <libopencm3/stm32/exti.h>
 
 #include <FreeRTOS.h>
 #include <semphr.h>
 #include <task.h>
+#include <stdbool.h>
+#include <stdio.h>
 
 #include "lcd_i2c.h"
 
@@ -29,6 +32,10 @@
 #define TRUE 1
 #define FALSE 0
 
+// Definiciones EXTI
+#define FALLING 0
+#define RISING 1
+
 // magic numbers
 #define BUFFER_SIZE 16
 #define MAX_TEMP 50
@@ -46,10 +53,8 @@ xSemaphoreHandle alarma_semaphore = NULL;
 // variables Globales
 volatile uint16_t temperatura = 0, porcentajeBateria = 0;
 volatile float temperatura_C = 0, bateria_porcetaje = 0;
-uint8_t modo_sistema = 0;
+bool modo_sistema = 0; // 0: manual, 1: automatico
 uint16_t sensor_movimiento = 0;
-
-// variables globales
 volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
 
 char buffer[BUFFER_SIZE];
@@ -60,10 +65,9 @@ xSemaphoreHandle bateria_semaforo = 0;
 xSemaphoreHandle movimiento_semaforo = 0;
 
 char buffer_temp_bateria[20];
-char buffer_modo[20];
+char buffer_modo[24];
 
-// -------------------------------------- Configuración
-// ------------------------------------------------
+// ------------------------- Configuración ------------------------------------------------
 /**
  * Función para configurar los pines.
  */
@@ -71,6 +75,8 @@ void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOA); // Habilita GPIOA para USART
   gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
                 GPIO_USART1_TX); // Configura PA9 como TX
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO4);
+  //configuracion pin para Boton de Modo
 
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
@@ -210,6 +216,15 @@ void configure_pwm(void) {
   timer_enable_counter(TIM4);
 }
 
+void configure_exti(void)
+{
+  rcc_periph_clock_enable(RCC_AFIO);  // Habilita el reloj para AFIO
+  nvic_enable_irq(NVIC_EXTI4_IRQ);  // Habilita la interrupción del EXTI4 en el NVIC
+  exti_select_source(EXTI4, GPIO4); // Selecciona el pin AO4 como fuente de interrupción
+  exti_set_trigger(EXTI4, EXTI_TRIGGER_BOTH);  // Configura el trigger de la interrupción
+  exti_enable_request(EXTI4); // Habilita la solicitud de interrupción
+}
+
 //------------------- Tareas
 //--------------------------------------------------------------------
 /**
@@ -225,7 +240,10 @@ static void task_uart(void *args __attribute__((unused))) {
     usart_send_labeled_value(
         "Temp",
         temperatura); // Envía el valor del ADC por el puerto serial
-
+    usart_send_labeled_value(
+        "Modo",
+        modo_sistema);
+      
     vTaskDelay(pdMS_TO_TICKS(1000)); // Hacerlo con timer para liberar el SO
   }
 }
@@ -275,14 +293,14 @@ static void task_adc_dma(void *args __attribute__((unused))) {
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     if (xSemaphoreTake(i2c_semaphore, portMAX_DELAY) == pdTRUE) {
-      modo_sistema = 0;
+      // modo_sistema = 0;
       // lcd_clear();
       sprintf(buffer_temp_bateria, "Temp:%3d Bat:%3d", (int)temperatura_C,
               (int)bateria_porcetaje);
       if (modo_sistema == 0) {
-        sprintf(buffer_modo, "Modo: Auto", modo_sistema);
+        sprintf(buffer_modo, "Modo: %-6s","Auto");//?
       } else {
-        sprintf(buffer_modo, "Modo: Manual", modo_sistema);
+        sprintf(buffer_modo, "Modo: %-6s","Manual");
       }
       lcd_set_cursor(0, 0);
       lcd_print(buffer_temp_bateria);
@@ -317,6 +335,11 @@ static void task_control(void *args __attribute__((unused))) {
   }
 }
 
+/**
+ * Tarea que se activa de acuerdo al semaforo: alarma_semaphore.
+ * Si se supera MAX_TEMP o es menor a MIN_TEMP se envía una señal 
+ * al buzzer y se hace parpadear un led para indicar la situación.
+ */
 static void task_alarma(void *args __attribute__((unused))) {
   while (true) {
     if (xSemaphoreTake(alarma_semaphore, portMAX_DELAY) == pdTRUE) {
@@ -331,7 +354,10 @@ static void task_alarma(void *args __attribute__((unused))) {
   }
 }
 
-// Tarea PWM
+/**
+ * Tarea que permite llevar a cabo la señal PWM. Esta señal es recibida por el led
+ * para indicar el estado de la batería según su brillo.
+ */
 static void task_pwm(void *args __attribute__((unused))) {
   uint16_t pwm_val = 0;
 
@@ -344,8 +370,7 @@ static void task_pwm(void *args __attribute__((unused))) {
   }
 }
 
-// ------------------------------------- Otras funciones
-// --------------------------- Hook function for stack overflow
+// -------------------------- Otras funciones ----------------------------------
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
   // Handle stack overflow
   (void)xTask;      // Avoid unused parameter warning
@@ -363,38 +388,6 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
   for (int i = 0; i < len; i++) {
     usart_send_blocking(USART1, buffer[i]); // Envía cada carácter
   }
-}
-
-// --------------------------------------- Interrupciones
-// -------------------------------
-/**
- * Manejo de la interrupción para el timer 2.
- */
-void tim2_isr(void) {
-  if (timer_get_flag(TIM2, TIM_SR_UIF)) { // Check for update interrupt
-    timer_clear_flag(TIM2, TIM_SR_UIF);   // Clear the interrupt flag
-    xSemaphoreGiveFromISR(adc_dma_semaphore,
-                          NULL); // Give the semaphore from ISR
-  }
-}
-
-/**
- * Manejo de la interrupción para el adc, canal 0 y 1.
- */
-void adc1_2_isr(void) {
-  if (adc_eoc(ADC1)) {
-    // Limpia el flag de fin de conversión (EOC)
-    adc_clear_flag(ADC1, ADC_SR_EOC);
-  }
-}
-
-/**
- * Manejo de la interrupción para el dma.
- */
-void dma1_channel1_isr(void) {
-  //     // Limpia el flag de transferencia completa
-  dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
-  xSemaphoreGiveFromISR(control_semaphore, NULL); // Give the semaphore from ISR
 }
 
 /**
@@ -435,6 +428,48 @@ void tareas_por_hacer(void) {
               tskIDLE_PRIORITY + 2, NULL);
 }
 
+// -------------------------- Interrupciones -------------------------------
+/**
+ * Manejo de la interrupción para el timer 2.
+ */
+void tim2_isr(void) {
+  if (timer_get_flag(TIM2, TIM_SR_UIF)) { // Check for update interrupt
+    timer_clear_flag(TIM2, TIM_SR_UIF);   // Clear the interrupt flag
+    xSemaphoreGiveFromISR(adc_dma_semaphore,
+                          NULL); // Give the semaphore from ISR
+  }
+}
+
+/**
+ * Manejo de la interrupción para el adc, canal 0 y 1.
+ */
+void adc1_2_isr(void) {
+  if (adc_eoc(ADC1)) {
+    // Limpia el flag de fin de conversión (EOC)
+    adc_clear_flag(ADC1, ADC_SR_EOC);
+  }
+}
+
+/**
+ * Manejo de la interrupción para el dma.
+ */
+void dma1_channel1_isr(void) {
+  //     // Limpia el flag de transferencia completa
+  dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
+  xSemaphoreGiveFromISR(control_semaphore, NULL); // Give the semaphore from ISR
+}
+
+/**
+ * Manejo de interrupciónes externas.
+ */
+void exti4_isr(void)
+{
+  exti_reset_request(EXTI4);  // Limpia la solicitud de interrupción
+
+  modo_sistema = gpio_get(GPIOA, GPIO4);
+
+}
+
 // -------------------------------- Funcion principal ---------------------
 int main(void) {
 
@@ -446,6 +481,7 @@ int main(void) {
   configure_adc();
   configure_dma();
   configure_pwm();
+  configure_exti();
   lcd_init();
 
   adc_start_conversion_direct(ADC1);
