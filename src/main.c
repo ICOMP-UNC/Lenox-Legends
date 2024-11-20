@@ -33,6 +33,8 @@
 #define BUFFER_SIZE 16
 #define MAX_TEMP 50
 #define MIN_TEMP -10
+#define MAX_COUNT 10000    // Máximo valor del PWM
+#define ADC_MAX_VALUE 4095 // Valor máximo de 12 bits para el ADC
 // ------------------------- Variables   ------------------------------
 // Create a binary semaphore
 xSemaphoreHandle adc_dma_semaphore = NULL;
@@ -73,6 +75,7 @@ void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
                 GPIO8); // Configurar B8 como salida
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO9); // PB9 para el canal de PWM
 
   rcc_periph_clock_enable(RCC_GPIOC);
   gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
@@ -182,6 +185,28 @@ void configure_dma(void) {
   // Se habilita en el NVIC la interrupción del DMA1-CH7
   nvic_enable_irq(NVIC_DMA1_CHANNEL1_IRQ);
   dma_enable_channel(DMA1, DMA_CHANNEL1); // Habilita el canal 1 del DMA1
+}
+
+/**
+ * Configuración de la señal PWM, utilizando el timer 4.
+ */
+void configure_pwm(void) {
+  
+  /* Configuración del TIM4 para PWM centrado */
+  rcc_periph_clock_enable(RCC_TIM4);
+  timer_set_mode(TIM4,                 // Timer general 4
+                 TIM_CR1_CKD_CK_INT,   // Clock interno como fuente
+                 TIM_CR1_CMS_CENTER_1, // Modo centrado
+                 TIM_CR1_DIR_UP);      // Dirección del conteo hacia arriba
+
+  timer_set_period(TIM4, MAX_COUNT - 1); // 72M/2/10000 = 3,6kHz
+
+  // Configura el canal PWM para el LED en PB7
+  timer_set_oc_mode(TIM4, TIM_OC4, TIM_OCM_PWM1); // PWM1: activo alto
+  timer_enable_oc_output(TIM4, TIM_OC4);          // Habilitar salida OC2
+
+  // Activa el contador del timer
+  timer_enable_counter(TIM4);
 }
 
 //------------------- Tareas
@@ -305,6 +330,19 @@ static void task_alarma(void *args __attribute__((unused))) {
   }
 }
 
+// Tarea PWM
+static void task_pwm(void *args __attribute__((unused))) {
+  uint16_t pwm_val = 0;
+
+  while (true) {
+    // Escala el valor del ADC al rango del PWM
+    pwm_val = (temperatura * MAX_COUNT) / ADC_MAX_VALUE;
+
+    // Ajusta el ciclo de trabajo del PWM en función del valor del ADC
+    timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
+  }
+}
+
 // ------------------------------------- Otras funciones
 // --------------------------- Hook function for stack overflow
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
@@ -390,6 +428,7 @@ int main(void) {
   configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
   configure_adc();
   configure_dma();
+  configure_pwm();
   lcd_init();
 
   adc_start_conversion_direct(ADC1);
@@ -412,6 +451,9 @@ int main(void) {
 
   xTaskCreate(task_alarma, "alarma", configMINIMAL_STACK_SIZE, NULL,
               tskIDLE_PRIORITY + 2, NULL);
+
+  // creamos la tarea PWM
+  xTaskCreate(task_pwm, "PWM", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
 
   // Start the scheduler
   vTaskStartScheduler();
