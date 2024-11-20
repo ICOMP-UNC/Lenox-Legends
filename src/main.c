@@ -170,13 +170,7 @@ void exti4_isr(void)
 void exti3_isr(void)
 {
   exti_reset_request(EXTI3);  // Limpia la solicitud de interrupción
-  delay_ms(100);
-  if(gpio_get(GPIOA, GPIO3)){
-    sensorMovimiento=true;
-  }
-  else{
-    sensorMovimiento=false;
-  }
+  sensorMovimiento=true;
 }
 
 void configure_timer(void)
@@ -280,7 +274,7 @@ void sys_tick_handler(void)
     {
       contador_puerta++;
       abrir_puerta();
-      if (contador_puerta > TOGGLE_COUNT * 6)
+      if (contador_puerta > TOGGLE_COUNT * 2)
       {
         estado_puerta = DETENIDA;
         parar_puerta();
@@ -325,6 +319,9 @@ void activarAlarma()
   delay_ms(250);
   gpio_clear(GPIOB, GPIO8);
   delay_ms(250);
+  if(gpio_get(GPIOA,GPIO3)){
+    sensorMovimiento=false;
+  }
 }
 
 bool bandera=true;
