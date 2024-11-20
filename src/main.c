@@ -306,7 +306,7 @@ void configure_usart(void)
   usart_set_parity(USART1, USART_PARITY_NONE);
   usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
   usart_enable(USART1);
-
+}
 void sys_tick_handler(void){
     systick_Count++;
     if(systick_Count > TOGGLE_COUNT){
@@ -351,19 +351,6 @@ void cerrar_puerta(){
 void parar_puerta(){
     gpio_clear(GPIOA, GPIO6);
     gpio_clear(GPIOA, GPIO7);
-}
-void print_lcd(){
-    //preparamos las cosas para imprimir
-    temperatura++;
-    sprintf(buffer,"Temp: %d",temperatura);
-    lcd_clear();
-    lcd_set_cursor(0,0);
-    lcd_print(buffer);
-
-    //preparamos modo:
-    sprintf(buffer,"Mode: %d",modo);
-    lcd_set_cursor(1,0);
-    lcd_print(buffer);
 }
 
 int main(void)
