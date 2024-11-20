@@ -75,7 +75,8 @@ void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
                 GPIO8); // Configurar B8 como salida
-  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO9); // PB9 para el canal de PWM
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
+                GPIO9); // PB9 para el canal de PWM
 
   rcc_periph_clock_enable(RCC_GPIOC);
   gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
@@ -191,7 +192,7 @@ void configure_dma(void) {
  * Configuración de la señal PWM, utilizando el timer 4.
  */
 void configure_pwm(void) {
-  
+
   /* Configuración del TIM4 para PWM centrado */
   rcc_periph_clock_enable(RCC_TIM4);
   timer_set_mode(TIM4,                 // Timer general 4
@@ -225,7 +226,7 @@ static void task_uart(void *args __attribute__((unused))) {
         "Temp",
         temperatura); // Envía el valor del ADC por el puerto serial
 
-    vTaskDelay(pdMS_TO_TICKS(1000)); //Hacerlo con timer para liberar el SO
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Hacerlo con timer para liberar el SO
   }
 }
 
@@ -398,20 +399,40 @@ void dma1_channel1_isr(void) {
 
 /**
  * Función que permite inicializar los semaforos.
- * Tener en cuenta que se deben inicializar los semaforos antes de que las funciones
- * los vayan a utilizar.
+ * Tener en cuenta que se deben inicializar los semaforos antes de que las
+ * funciones los vayan a utilizar.
  */
-void inicializacion_semanforos(void)
-{
+void inicializacion_semanforos(void) {
   i2c_semaphore = xSemaphoreCreateBinary();
   adc_dma_semaphore = xSemaphoreCreateBinary();
   control_semaphore = xSemaphoreCreateBinary();
   alarma_semaphore = xSemaphoreCreateBinary();
 
-  if (i2c_semaphore == NULL || adc_dma_semaphore == NULL || control_semaphore == NULL || alarma_semaphore == NULL) {
+  if (i2c_semaphore == NULL || adc_dma_semaphore == NULL ||
+      control_semaphore == NULL || alarma_semaphore == NULL) {
     while (1)
       ; // Handle semaphore creation failure
   }
+}
+
+/**
+ * Función que crea las distintas tareas a realizar.
+ */
+void tareas_por_hacer(void) {
+  // Create tasks
+  xTaskCreate(task_adc_dma, "LED Control", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(task_uart, "UART", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(task_i2c, "I2C", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(task_control, "control", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(task_alarma, "alarma", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  // creamos la tarea PWM
+  xTaskCreate(task_pwm, "PWM", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
 }
 
 // -------------------------------- Funcion principal ---------------------
@@ -429,27 +450,7 @@ int main(void) {
 
   adc_start_conversion_direct(ADC1);
 
-  // Optionally give semaphore initially
-  // xSemaphoreGive(adc_dma_semaphore);
-
-  // Create tasks
-  xTaskCreate(task_adc_dma, "LED Control", configMINIMAL_STACK_SIZE, NULL,
-              tskIDLE_PRIORITY + 2, NULL);
-
-  xTaskCreate(task_uart, "UART", configMINIMAL_STACK_SIZE, NULL,
-              tskIDLE_PRIORITY + 2, NULL);
-
-  xTaskCreate(task_i2c, "I2C", configMINIMAL_STACK_SIZE, NULL,
-              tskIDLE_PRIORITY + 2, NULL);
-
-  xTaskCreate(task_control, "control", configMINIMAL_STACK_SIZE, NULL,
-              tskIDLE_PRIORITY + 2, NULL);
-
-  xTaskCreate(task_alarma, "alarma", configMINIMAL_STACK_SIZE, NULL,
-              tskIDLE_PRIORITY + 2, NULL);
-
-  // creamos la tarea PWM
-  xTaskCreate(task_pwm, "PWM", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
+  tareas_por_hacer();
 
   // Start the scheduler
   vTaskStartScheduler();
