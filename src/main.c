@@ -2,18 +2,18 @@
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/dma.h>
+#include <libopencm3/stm32/exti.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/i2c.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
-#include <libopencm3/stm32/exti.h>
 
 #include <FreeRTOS.h>
 #include <semphr.h>
-#include <task.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <task.h>
 
 #include "lcd_i2c.h"
 
@@ -67,7 +67,8 @@ xSemaphoreHandle movimiento_semaforo = 0;
 char buffer_temp_bateria[20];
 char buffer_modo[24];
 
-// ------------------------- Configuración ------------------------------------------------
+// ------------------------- Configuración
+// ------------------------------------------------
 /**
  * Función para configurar los pines.
  */
@@ -75,8 +76,10 @@ void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOA); // Habilita GPIOA para USART
   gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
                 GPIO_USART1_TX); // Configura PA9 como TX
+  // configuracion pin para Boton de Modo
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO4);
-  //configuracion pin para Boton de Modo
+  // configuracion pin para sensor movimiento
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO3);
 
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
@@ -216,13 +219,23 @@ void configure_pwm(void) {
   timer_enable_counter(TIM4);
 }
 
-void configure_exti(void)
-{
-  rcc_periph_clock_enable(RCC_AFIO);  // Habilita el reloj para AFIO
-  nvic_enable_irq(NVIC_EXTI4_IRQ);  // Habilita la interrupción del EXTI4 en el NVIC
-  exti_select_source(EXTI4, GPIO4); // Selecciona el pin AO4 como fuente de interrupción
-  exti_set_trigger(EXTI4, EXTI_TRIGGER_BOTH);  // Configura el trigger de la interrupción
-  exti_enable_request(EXTI4); // Habilita la solicitud de interrupción
+void configure_exti(void) {
+  rcc_periph_clock_enable(RCC_AFIO); // Habilita el reloj para AFIO
+  nvic_enable_irq(
+      NVIC_EXTI4_IRQ); // Habilita la interrupción del EXTI4 en el NVIC
+  exti_select_source(
+      EXTI4, GPIO4); // Selecciona el pin AO4 como fuente de interrupción
+  exti_set_trigger(
+      EXTI4, EXTI_TRIGGER_BOTH); // Configura el trigger de la interrupción
+  exti_enable_request(EXTI4);    // Habilita la solicitud de interrupción
+
+  nvic_enable_irq(
+      NVIC_EXTI3_IRQ); // Habilita la interrupción del EXTI4 en el NVIC
+  exti_select_source(
+      EXTI3, GPIO3); // Selecciona el pin AO4 como fuente de interrupción
+  exti_set_trigger(
+      EXTI3, EXTI_TRIGGER_BOTH); // Configura el trigger de la interrupción
+  exti_enable_request(EXTI3);    // Habilita la solicitud de interrupción
 }
 
 //------------------- Tareas
@@ -240,10 +253,9 @@ static void task_uart(void *args __attribute__((unused))) {
     usart_send_labeled_value(
         "Temp",
         temperatura); // Envía el valor del ADC por el puerto serial
-    usart_send_labeled_value(
-        "Modo",
-        modo_sistema);
-      
+    usart_send_labeled_value("Modo", modo_sistema);
+    usart_send_labeled_value("Sensor", sensor_movimiento);
+
     vTaskDelay(pdMS_TO_TICKS(1000)); // Hacerlo con timer para liberar el SO
   }
 }
@@ -298,9 +310,9 @@ static void task_i2c(void *args __attribute__((unused))) {
       sprintf(buffer_temp_bateria, "Temp:%3d Bat:%3d", (int)temperatura_C,
               (int)bateria_porcetaje);
       if (modo_sistema == 0) {
-        sprintf(buffer_modo, "Modo: %-6s","Auto");//?
+        sprintf(buffer_modo, "Modo: %-6s", "Auto"); //?
       } else {
-        sprintf(buffer_modo, "Modo: %-6s","Manual");
+        sprintf(buffer_modo, "Modo: %-6s", "Manual");
       }
       lcd_set_cursor(0, 0);
       lcd_print(buffer_temp_bateria);
@@ -337,7 +349,7 @@ static void task_control(void *args __attribute__((unused))) {
 
 /**
  * Tarea que se activa de acuerdo al semaforo: alarma_semaphore.
- * Si se supera MAX_TEMP o es menor a MIN_TEMP se envía una señal 
+ * Si se supera MAX_TEMP o es menor a MIN_TEMP se envía una señal
  * al buzzer y se hace parpadear un led para indicar la situación.
  */
 static void task_alarma(void *args __attribute__((unused))) {
@@ -349,14 +361,18 @@ static void task_alarma(void *args __attribute__((unused))) {
         vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
         gpio_clear(GPIOB, GPIO8);       // Apaga el buzzer
         vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
+        
+        if (gpio_get(GPIOA, GPIO3)) {
+          sensor_movimiento = FALSE;
+        }
       }
     }
   }
 }
 
 /**
- * Tarea que permite llevar a cabo la señal PWM. Esta señal es recibida por el led
- * para indicar el estado de la batería según su brillo.
+ * Tarea que permite llevar a cabo la señal PWM. Esta señal es recibida por el
+ * led para indicar el estado de la batería según su brillo.
  */
 static void task_pwm(void *args __attribute__((unused))) {
   uint16_t pwm_val = 0;
@@ -460,14 +476,21 @@ void dma1_channel1_isr(void) {
 }
 
 /**
- * Manejo de interrupciónes externas.
+ * Manejo de interrupciónes externas para el switch que permite
+ * cambiar de modo, entre automático y manual.
  */
-void exti4_isr(void)
-{
-  exti_reset_request(EXTI4);  // Limpia la solicitud de interrupción
+void exti4_isr(void) {
+  exti_reset_request(EXTI4); // Limpia la solicitud de interrupción
 
   modo_sistema = gpio_get(GPIOA, GPIO4);
+}
 
+/**
+ * Manejo de interrupción externa para el sensor de moviemiento.
+ */
+void exti3_isr(void) {
+  exti_reset_request(EXTI3); // Limpia la solicitud de interrupción
+  sensor_movimiento = TRUE;
 }
 
 // -------------------------------- Funcion principal ---------------------
