@@ -49,6 +49,8 @@ xSemaphoreHandle control_semaphore = NULL;
 xSemaphoreHandle i2c_semaphore = NULL;
 xSemaphoreHandle uart_semaphore = NULL;
 xSemaphoreHandle alarma_semaphore = NULL;
+xSemaphoreHandle cerrar_semaphore = NULL;
+xSemaphoreHandle abrir_semaphore = NULL;
 
 // variables Globales
 volatile uint16_t temperatura = 0, porcentajeBateria = 0;
@@ -56,6 +58,7 @@ volatile float temperatura_C = 0, bateria_porcetaje = 0;
 bool modo_sistema = 0; // 0: manual, 1: automatico
 uint16_t sensor_movimiento = 0;
 volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria
+volatile bool Puerta=1;
 
 char buffer[BUFFER_SIZE];
 
@@ -80,6 +83,14 @@ void configure_pins() {
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO4);
   // configuracion pin para sensor movimiento
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO3);
+  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
+                GPIO6);
+  gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
+                GPIO7);
+
+                // SE FUERZA LOS PINES DE LOS MOTORES A 0
+  gpio_clear(GPIOA, GPIO6);
+  gpio_clear(GPIOA, GPIO7);
 
   rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
   gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
@@ -360,6 +371,11 @@ static void task_alarma(void *args __attribute__((unused))) {
     if (xSemaphoreTake(alarma_semaphore, portMAX_DELAY) == pdTRUE) {
       while (temperatura_C > MAX_TEMP || temperatura_C < MIN_TEMP ||
              sensor_movimiento == TRUE) {
+        if(modo_sistema==0 && Puerta==1){
+          xSemaphoreGive(cerrar_semaphore);
+          Puerta=0;
+        }
+
         gpio_set(GPIOB, GPIO8);         // Enciende el buzzer en B8
         vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
         gpio_clear(GPIOB, GPIO8);       // Apaga el buzzer
@@ -368,7 +384,12 @@ static void task_alarma(void *args __attribute__((unused))) {
         if (gpio_get(GPIOA, GPIO3)) {
           sensor_movimiento = FALSE;
         }
+        
       }
+          if(modo_sistema==0 && Puerta==0){
+          xSemaphoreGive(abrir_semaphore);
+          Puerta=1;
+        }
     }
   }
 }
@@ -386,6 +407,31 @@ static void task_pwm(void *args __attribute__((unused))) {
 
     // Ajusta el ciclo de trabajo del PWM en función del valor del ADC
     timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
+  }
+}
+
+static void task_abrir(void *args __attribute__((unused))) {
+  while (true) {
+    if (xSemaphoreTake(abrir_semaphore, portMAX_DELAY) == pdTRUE) {
+      gpio_clear(GPIOA, GPIO6);
+      gpio_set(GPIOA, GPIO7);
+      vTaskDelay(pdMS_TO_TICKS(100));
+      gpio_clear(GPIOA, GPIO6);
+      gpio_clear(GPIOA, GPIO7);
+      
+    }
+  }
+}
+
+static void task_cerrar(void *args __attribute__((unused))) {
+  while (true) {
+     if (xSemaphoreTake(cerrar_semaphore, portMAX_DELAY) == pdTRUE) {
+      gpio_clear(GPIOA, GPIO7);
+      gpio_set(GPIOA, GPIO6);
+      vTaskDelay(pdMS_TO_TICKS(100));
+      gpio_clear(GPIOA, GPIO6);
+      gpio_clear(GPIOA, GPIO7);
+     }
   }
 }
 
@@ -420,10 +466,13 @@ void inicializacion_semanforos(void) {
   control_semaphore = xSemaphoreCreateBinary();
   alarma_semaphore = xSemaphoreCreateBinary();
   uart_semaphore = xSemaphoreCreateBinary();
+  cerrar_semaphore = xSemaphoreCreateBinary();
+  abrir_semaphore = xSemaphoreCreateBinary();
 
   if (i2c_semaphore == NULL || adc_dma_semaphore == NULL ||
       control_semaphore == NULL || alarma_semaphore == NULL ||
-      uart_semaphore == NULL) {
+      uart_semaphore == NULL || cerrar_semaphore == NULL ||
+      abrir_semaphore == NULL) {
     while (1)
       ; // Handle semaphore creation failure
   }
@@ -444,8 +493,11 @@ void tareas_por_hacer(void) {
               tskIDLE_PRIORITY + 2, NULL);
   xTaskCreate(task_alarma, "alarma", configMINIMAL_STACK_SIZE, NULL,
               tskIDLE_PRIORITY + 2, NULL);
-  // creamos la tarea PWM
   xTaskCreate(task_pwm, "PWM", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(task_abrir, "abrir", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(task_cerrar, "cerrar", configMINIMAL_STACK_SIZE, NULL,
               tskIDLE_PRIORITY + 2, NULL);
 }
 
