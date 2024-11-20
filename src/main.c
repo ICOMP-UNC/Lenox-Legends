@@ -200,6 +200,7 @@ static void task_adc_dma(void *args __attribute__((unused))) {
   while (true) {
     // Wait for the semaphore indefinitely
     if (xSemaphoreTake(adc_dma_semaphore, portMAX_DELAY) == pdTRUE) {
+      Timer_Batery_Count++;
       adc_power_off(ADC1); // Apaga el ADC para configurarlo
       dma_disable_channel(DMA1,
                           DMA_CHANNEL1); // Deshabilita el canal 1 del DMA1
