@@ -1,29 +1,56 @@
 ```mermaid
 sequenceDiagram
-    participant Main
-    participant Task1
-    participant TaskI2C
-    participant TaskUART
-    participant USART
-    participant LCD
+    participant Sistema as Sistema
+    participant SensorMovimiento as Sensor de Movimiento
+    participant ADC as ADC
+    participant LCD as LCD
+    participant Alarma as Alarma
+    participant Puerta as Puerta
+    participant UART as UART
+    participant Buzzer as Buzzer
+    participant BotonModo as Botón de Cambio de Modo
 
-    Main->>Task1: Crea tarea LedSwitching
-    Main->>TaskI2C: Crea tarea I2C
-    Main->>TaskUART: Crea tarea UART
-    Main->>USART: Configura USART
-    Main->>LCD: Inicializa LCD
+    Sistema->>Sistema: Inicia el sistema
+    Sistema->>LCD: Inicializa la pantalla LCD
+    Sistema->>SensorMovimiento: Configura el sensor de movimiento
+    Sistema->>ADC: Configura el ADC para temperatura y batería
+    Sistema->>Puerta: Configura los pines de control de la puerta
+    Sistema->>Alarma: Configura la alarma y el buzzer
+    Sistema->>BotonModo: Configura el botón de cambio de modo
 
-    Task1->>GPIOC: Toggling LED
-    Task1->>Task1: Espera 100ms
+    loop Cada 500ms
+        Sistema->>ADC: Lee valores de temperatura y batería
+        ADC->>Sistema: Devuelve los valores de temperatura y batería
+        Sistema->>LCD: Actualiza la pantalla LCD con los valores de temperatura y batería
+        Sistema->>Puerta: Verifica el estado de la puerta (abierta/cerrada)
+        Puerta->>Sistema: Devuelve el estado actual de la puerta
+        Sistema->>LCD: Muestra el estado de la puerta en la LCD
 
-    TaskI2C->>Temperatura: Incrementa temperatura
-    TaskI2C->>PorcentajeBateria: Incrementa porcentajeBateria
-    TaskI2C->>ModoSistema: Establece modo (0)
-    TaskI2C->>LCD: Muestra "Temperatura" y "Modo"
-    TaskI2C->>TaskI2C: Espera 1000ms
+        alt Movimiento detectado
+            Sistema->>Alarma: Activa alarma
+            Alarma->>Buzzer: Activa el buzzer
+            Buzzer->>Alarma: Mantiene el buzzer activo hasta que no haya movimiento
+        else No hay movimiento
+            Sistema->>Alarma: Desactiva alarma
+            Alarma->>Buzzer: Desactiva el buzzer
+        end
 
-    TaskUART->>USART: Enviar "A1:Temperatura"
-    TaskUART->>USART: Enviar "A2:PorcentajeBateria"
-    TaskUART->>USART: Enviar "V3:SensorMovimiento"
-    TaskUART->>TaskUART: Espera 1000ms
+        alt Cambio de modo detectado
+            BotonModo->>Sistema: Detecta presión del botón
+            Sistema->>Sistema: Cambia el modo entre normal y alarma
+            Sistema->>LCD: Muestra mensaje indicando el modo actual
+        end
+    end
+
+    alt Transmisión UART
+        Sistema->>UART: Prepara los datos (temperatura, batería, estado puerta)
+        UART->>Sistema: Envía datos por UART
+        Sistema->>UART: Espera confirmación de transmisión exitosa
+        UART->>Sistema: Confirmación de datos enviados
+    end
+
+    Sistema->>SensorMovimiento: Revisa si hay cambios en el sensor de movimiento
+    SensorMovimiento->>Sistema: Interrupción (si hay movimiento)
+    Sistema->>SensorMovimiento: Reacciona a la interrupción (puede activar alarma)
+
 ```
