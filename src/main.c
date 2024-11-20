@@ -25,14 +25,21 @@
 #define USART_BAUDRATE 9600
 #define USART_DATABITS 8
 
+// BOLEANOS
+#define TRUE 1
+#define FALSE 0
+
 // magic numbers
 #define BUFFER_SIZE 16
+#define MAX_TEMP 50
+#define MIN_TEMP -10
 // ------------------------- Variables   ------------------------------
 // Create a binary semaphore
 xSemaphoreHandle adc_dma_semaphore = NULL;
 xSemaphoreHandle control_semaphore = NULL;
 xSemaphoreHandle i2c_semaphore = NULL;
-xSemaphoreHandle uart_semaphore = NULL;
+xSemaphoreHandle uart_semaphore = NULL; // NO SE USA
+xSemaphoreHandle alarma_semaphore = NULL;
 
 // variables Globales
 volatile uint16_t temperatura = 0, porcentajeBateria = 0;
@@ -62,6 +69,10 @@ void configure_pins() {
   rcc_periph_clock_enable(RCC_GPIOA); // Habilita GPIOA para USART
   gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
                 GPIO_USART1_TX); // Configura PA9 como TX
+
+  rcc_periph_clock_enable(RCC_GPIOB); // Habilitar el reloj para el puerto B
+  gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
+                GPIO8); // Configurar B8 como salida
 
   rcc_periph_clock_enable(RCC_GPIOC);
   gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
@@ -189,7 +200,7 @@ static void task_uart(void *args __attribute__((unused))) {
         "Temp",
         temperatura); // Envía el valor del ADC por el puerto serial
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(1000)); //Hacerlo con timer para liberar el SO
   }
 }
 
@@ -239,7 +250,7 @@ static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
     if (xSemaphoreTake(i2c_semaphore, portMAX_DELAY) == pdTRUE) {
       modo_sistema = 0;
-      //lcd_clear();
+      // lcd_clear();
       sprintf(buffer_temp_bateria, "Temp:%3d Bat:%3d", (int)temperatura_C,
               (int)bateria_porcetaje);
       if (modo_sistema == 0) {
@@ -251,7 +262,6 @@ static void task_i2c(void *args __attribute__((unused))) {
       lcd_print(buffer_temp_bateria);
       lcd_set_cursor(1, 0);
       lcd_print(buffer_modo);
-
     }
   }
 }
@@ -275,7 +285,22 @@ static void task_control(void *args __attribute__((unused))) {
       if (bateria_porcetaje < 0.0f)
         bateria_porcetaje = 0.0f;
 
-      xSemaphoreGive(i2c_semaphore); // Give the semaphore from I2C
+      xSemaphoreGive(i2c_semaphore);    // Give the semaphore from I2C
+      xSemaphoreGive(alarma_semaphore); // Give the semaphore from alarma
+    }
+  }
+}
+
+static void task_alarma(void *args __attribute__((unused))) {
+  while (true) {
+    if (xSemaphoreTake(alarma_semaphore, portMAX_DELAY) == pdTRUE) {
+      while (temperatura_C > MAX_TEMP || temperatura_C < MIN_TEMP ||
+             sensor_movimiento == TRUE) {
+        gpio_set(GPIOB, GPIO8);         // Enciende el buzzer en B8
+        vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
+        gpio_clear(GPIOB, GPIO8);       // Apaga el buzzer
+        vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
+      }
     }
   }
 }
@@ -354,6 +379,12 @@ int main(void) {
       ; // Handle semaphore creation failure
   }
 
+  alarma_semaphore = xSemaphoreCreateBinary();
+  if (alarma_semaphore == NULL) {
+    while (1)
+      ; // Handle semaphore creation failure
+  }
+
   configure_pins();
   configure_usart();
   configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
@@ -377,6 +408,9 @@ int main(void) {
               tskIDLE_PRIORITY + 2, NULL);
 
   xTaskCreate(task_control, "control", configMINIMAL_STACK_SIZE, NULL,
+              tskIDLE_PRIORITY + 2, NULL);
+
+  xTaskCreate(task_alarma, "alarma", configMINIMAL_STACK_SIZE, NULL,
               tskIDLE_PRIORITY + 2, NULL);
 
   // Start the scheduler
