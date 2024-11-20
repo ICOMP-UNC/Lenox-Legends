@@ -121,7 +121,6 @@ void configure_systick(void)
   systick_counter_enable(); // Habilita el contador del systick
 }
 void configure_pwm(){
-  /* Configuración del TIM4 para PWM centrado */
   rcc_periph_clock_enable(RCC_TIM4);
   timer_set_mode(TIM4,                 // Timer general 4
                  TIM_CR1_CKD_CK_INT,   // Clock interno como fuente
@@ -353,6 +352,7 @@ int main(void)
   configure_dma();
   configure_usart();
   exti_setup();
+  uint16_t pwm_val=0;
   while (1)
   {
     if (flag_UART)
@@ -360,6 +360,8 @@ int main(void)
       enviar_sados();
       flag_UART = 0;
     }
+    uint16_t pwm_val = (bateria * MAX_COUNT) / ADC_MAX_VALUE;
+    timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
     procesarDatos(temperatura, sensorMovimiento);
   }
 }
@@ -440,8 +442,7 @@ void dma1_channel1_isr(void)
 {
   //     // Limpia el flag de transferencia completa
   dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CTCIF1);
-  uint16_t pwm_val = (bateria * MAX_COUNT) / ADC_MAX_VALUE;
-  timer_set_oc_value(TIM4, TIM_OC4, pwm_val);
+  
 
   //  usart_send_value("Bat:",bateria);  // Envía el valor del ADC por el puerto serial
   //  usart_send_value("Temp:",temperatura);  // Envía el valor del ADC por el puerto serial
