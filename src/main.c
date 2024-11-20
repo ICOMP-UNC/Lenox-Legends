@@ -47,7 +47,7 @@
 xSemaphoreHandle adc_dma_semaphore = NULL;
 xSemaphoreHandle control_semaphore = NULL;
 xSemaphoreHandle i2c_semaphore = NULL;
-xSemaphoreHandle uart_semaphore = NULL; // NO SE USA
+xSemaphoreHandle uart_semaphore = NULL;
 xSemaphoreHandle alarma_semaphore = NULL;
 
 // variables Globales
@@ -113,19 +113,23 @@ void configure_usart(void) {
  */
 void configure_timer(void) {
   rcc_periph_clock_enable(RCC_TIM2); // Enable TIM2 clock
-
   timer_disable_counter(TIM2);
-
   // timer_reset(TIM2); // Reset TIM2 configuration
   timer_set_prescaler(TIM2, 7200 - 1); // Prescaler for 10 kHz timer clock
   timer_set_period(TIM2, 200 - 1);     // Period for 1-second interrupt
-
   // timer_enable_update_event(TIM2);    // Enable update events
-
   timer_enable_irq(TIM2, TIM_DIER_UIE); // Enable update interrupt
   nvic_enable_irq(NVIC_TIM2_IRQ);       // Enable TIM2 interrupt in NVIC
+  timer_enable_counter(TIM2);           // Start the timer
 
-  timer_enable_counter(TIM2); // Start the timer
+  rcc_periph_clock_enable(RCC_TIM3);   // Enable Timer 3 clock
+  timer_disable_counter(TIM3);         // Ensure timer is stopped during setup
+  timer_set_prescaler(TIM3, 7200 - 1); // Prescaler for 10 kHz clock
+  timer_set_period(TIM3,
+                   300000 - 1); // Period for 30 seconds (10,000 Hz / 300,000)
+  timer_enable_irq(TIM3, TIM_DIER_UIE); // Enable update interrupt
+  nvic_enable_irq(NVIC_TIM3_IRQ);       // Enable NVIC interrupt for Timer 3
+  timer_enable_counter(TIM3);           // Start the timer
 }
 
 /**
@@ -246,17 +250,16 @@ void configure_exti(void) {
 static void task_uart(void *args __attribute__((unused))) {
   while (true) {
     // Envía las variables etiquetadas por UART
-
-    usart_send_labeled_value(
-        "Bat",
-        porcentajeBateria); // Envía el valor del ADC por el puerto serial
-    usart_send_labeled_value(
-        "Temp",
-        temperatura); // Envía el valor del ADC por el puerto serial
-    usart_send_labeled_value("Modo", modo_sistema);
-    usart_send_labeled_value("Sensor", sensor_movimiento);
-
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Hacerlo con timer para liberar el SO
+    if (xSemaphoreTake(uart_semaphore, portMAX_DELAY) == pdTRUE) {
+      usart_send_labeled_value(
+          "Bat",
+          porcentajeBateria); // Envía el valor del ADC por el puerto serial
+      usart_send_labeled_value(
+          "Temp",
+          temperatura); // Envía el valor del ADC por el puerto serial
+      usart_send_labeled_value("Modo", modo_sistema);
+      usart_send_labeled_value("Sensor", sensor_movimiento);
+    }
   }
 }
 
@@ -361,7 +364,7 @@ static void task_alarma(void *args __attribute__((unused))) {
         vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
         gpio_clear(GPIOB, GPIO8);       // Apaga el buzzer
         vTaskDelay(pdMS_TO_TICKS(100)); // Sonido durante 500 ms (ajustable)
-        
+
         if (gpio_get(GPIOA, GPIO3)) {
           sensor_movimiento = FALSE;
         }
@@ -416,9 +419,11 @@ void inicializacion_semanforos(void) {
   adc_dma_semaphore = xSemaphoreCreateBinary();
   control_semaphore = xSemaphoreCreateBinary();
   alarma_semaphore = xSemaphoreCreateBinary();
+  uart_semaphore = xSemaphoreCreateBinary();
 
   if (i2c_semaphore == NULL || adc_dma_semaphore == NULL ||
-      control_semaphore == NULL || alarma_semaphore == NULL) {
+      control_semaphore == NULL || alarma_semaphore == NULL ||
+      uart_semaphore == NULL) {
     while (1)
       ; // Handle semaphore creation failure
   }
@@ -452,6 +457,15 @@ void tim2_isr(void) {
   if (timer_get_flag(TIM2, TIM_SR_UIF)) { // Check for update interrupt
     timer_clear_flag(TIM2, TIM_SR_UIF);   // Clear the interrupt flag
     xSemaphoreGiveFromISR(adc_dma_semaphore,
+                          NULL); // Give the semaphore from ISR
+  }
+}
+
+// Timer 3 ISR
+void tim3_isr(void) {
+  if (timer_get_flag(TIM3, TIM_SR_UIF)) { // Check update interrupt flag
+    timer_clear_flag(TIM3, TIM_SR_UIF);   // Clear interrupt flag
+    xSemaphoreGiveFromISR(uart_semaphore,
                           NULL); // Give the semaphore from ISR
   }
 }
