@@ -11,7 +11,7 @@ Se implemento la actividad propuesta por el profesor.
 3. Mauricio Mugni
 
 ## Esquemático del circuito final
-![alt text](<circuito/Project Backups/Esquematico.SVG>)
+![alt text](<img/Esquematico.SVG>)
 
 ## Diagrama de flujos para el código sin FreeRTOS
 Diagrama secuencial SIN FREERTOS
