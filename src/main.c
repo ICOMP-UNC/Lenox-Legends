@@ -55,6 +55,7 @@
 #define MIN_TEMP -10
 #define MAX_COUNT 10000    // Máximo valor del PWM
 #define ADC_MAX_VALUE 4095 // Valor máximo de 12 bits para el ADC
+
 // ------------------------- Variables   ------------------------------
 // Create a binary semaphore
 xSemaphoreHandle adc_dma_semaphore = NULL;
@@ -72,6 +73,7 @@ bool modo_sistema = 0;                    // Variable para el modo de sistema (0
 uint16_t sensor_movimiento = 0;           // Variable para el sensor de movimiento
 volatile uint16_t Timer_Batery_Count = 0; // contador para leer la bateria cada 10 seg
 volatile bool Puerta = 1;                 // Variable para el estado de la puerta (0: cerrada, 1: abierta)
+volatile uint32_t timer_ms = 0;
 
 char buffer[BUFFER_SIZE]; // Buffer para la impresión de datos
 
@@ -139,6 +141,15 @@ void configure_usart(void)
  */
 void configure_timer(void)
 {
+  // Configuración del Timer 1
+    rcc_periph_clock_enable(RCC_TIM1);
+    timer_disable_counter(TIM1);
+    timer_set_prescaler(TIM1, 72 - 1); // 72 MHz / 72 = 1 MHz (1 µs per tick)
+    timer_set_period(TIM1, 1000 - 1); // 1 MHz / 1000 = 1 kHz (1 ms period)
+    timer_enable_irq(TIM1, TIM_DIER_UIE);
+    nvic_enable_irq(NVIC_TIM1_UP_IRQ);
+    timer_enable_counter(TIM1);
+
   // Configuración del Timer 2
   rcc_periph_clock_enable(RCC_TIM2); // Enable TIM2 clock
   timer_disable_counter(TIM2);
@@ -477,6 +488,11 @@ static void task_cerrar(void *args __attribute__((unused)))
 }
 
 // -------------------------- Otras funciones ----------------------------------
+/**
+ * @brief Función que maneja el Stack Over Flow del programa.
+ * @param xTask etiqueta para la tarea.
+ * @param pcTaskName puntero
+ */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
   // Handle stack overflow
@@ -487,6 +503,16 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
   while (1)
   {
   }
+}
+
+/**
+ * @brief Millisecond delay - esta función es utilizada para realizar los delays del programa,
+ * Es empleada por el archivo main.c y lcd_i2c.c
+ * @param mS tiempo en milisegundos que se debe esperar
+ */
+void delay_ms(uint32_t ms) {
+    uint32_t start = timer_ms;
+    while ((timer_ms - start) < ms);
 }
 
 /**
@@ -553,6 +579,17 @@ void tareas_por_hacer(void)
 }
 
 // -------------------------- Interrupciones -------------------------------
+/**
+ * @brief Manejo de la interrupción para el timer 1.
+ * Se encarga de realizar los delays del programa.
+ */
+void tim1_up_isr(void) {
+    if (timer_get_flag(TIM1, TIM_SR_UIF)) {
+        timer_clear_flag(TIM1, TIM_SR_UIF);
+        timer_ms++;
+    }
+}
+
 /**
  * @brief Manejo de la interrupción para el timer 2.
  */
@@ -626,12 +663,12 @@ void exti3_isr(void)
  */
 int main(void)
 {
-
   inicializacion_semanforos();
 
+  // Cuidado con cambiar el orden!
   configure_pins();
   configure_usart();
-  configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
+  configure_timer(); 
   configure_adc();
   configure_dma();
   configure_pwm();

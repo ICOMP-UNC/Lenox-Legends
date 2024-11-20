@@ -2,13 +2,9 @@
 #include <libopencm3/stm32/i2c.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/timer.h>
+#include <libopencm3/cm3/nvic.h>
 #include <stdio.h>
-
-void delay_ms(uint32_t ms){
-    for(int i=0; i<ms*8000; i++){
-        __asm__("nop");
-    }
-}
 
 static void i2c_write(uint8_t addr, uint8_t data) {
     i2c_transfer7(I2C_BUS, addr, &data, 1, NULL, 0);
@@ -50,6 +46,7 @@ void lcd_init(void) {
     i2c_set_ccr(I2C_BUS, 180);                   // Calculado para 100 kHz con 36 MHz de reloj
     i2c_set_trise(I2C_BUS, 37);                  // Tiempo de subida para 100 kHz en 36 MHz
     i2c_peripheral_enable(I2C_BUS);              // Activa I2C
+
     delay_ms(5);
     // Secuencia de inicialización del LCD
     lcd_send_nibble(0x03, 0); // Inicio en modo de 8 bits7
