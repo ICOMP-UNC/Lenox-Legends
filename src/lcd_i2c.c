@@ -31,6 +31,10 @@ void lcd_data(uint8_t data) {
     lcd_send_byte(data, LCD_RS);
 }
 
+/**
+ * Se debe tener en cuenta que esta función hace uso de la función delay_ms, 
+ * que es configura por el timer 1 y de configurar este timer lo hace el archivo main.c
+ */
 void lcd_init(void) {
     rcc_periph_clock_enable(RCC_I2C1);
     rcc_periph_clock_enable(RCC_GPIOB);
