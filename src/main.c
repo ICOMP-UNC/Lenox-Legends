@@ -31,6 +31,8 @@
 // Create a binary semaphore
 xSemaphoreHandle adc_dma_semaphore = NULL;
 xSemaphoreHandle control_semaphore = NULL;
+xSemaphoreHandle i2c_semaphore = NULL;
+xSemaphoreHandle uart_semaphore = NULL;
 
 // variables Globales
 volatile uint16_t temperatura = 0;
@@ -232,19 +234,21 @@ static void task_adc_dma(void *args __attribute__((unused))) {
  */
 static void task_i2c(void *args __attribute__((unused))) {
   while (true) {
-    modo_sistema = 0;
-    sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", temperatura,
-            porcentajeBateria);
-    if (modo_sistema == 0) {
-      sprintf(buffer_modo, "Modo: Auto", modo_sistema);
-    } else {
-      sprintf(buffer_modo, "Modo: Manual", modo_sistema);
+    if (xSemaphoreTake(control_semaphore, portMAX_DELAY) == pdTRUE) {
+      modo_sistema = 0;
+      sprintf(buffer_temp_bateria, "Temp:%d Bat:%d", temperatura,
+              porcentajeBateria);
+      if (modo_sistema == 0) {
+        sprintf(buffer_modo, "Modo: Auto", modo_sistema);
+      } else {
+        sprintf(buffer_modo, "Modo: Manual", modo_sistema);
+      }
+      lcd_set_cursor(0, 0);
+      lcd_print(buffer_temp_bateria);
+      lcd_set_cursor(1, 0);
+      lcd_print(buffer_modo);
+      // vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    lcd_set_cursor(0, 0);
-    lcd_print(buffer_temp_bateria);
-    lcd_set_cursor(1, 0);
-    lcd_print(buffer_modo);
-    // vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
@@ -252,6 +256,11 @@ static void task_control(void *args __attribute__((unused))) {
   while (true) {
     if (xSemaphoreTake(control_semaphore, portMAX_DELAY) == pdTRUE) {
       gpio_toggle(GPIOC, GPIO13);
+    //   porcentajeBateria =
+    //       (uint16_t)(((uint32_t)porcentajeBateria * 4096) / 100);
+    //   temperatura = (uint16_t)(((uint32_t)temperatura * 4096) / 100);
+
+      xSemaphoreGive(i2c_semaphore); // Give the semaphore from I2C
     }
   }
 }
@@ -283,9 +292,10 @@ void usart_send_labeled_value(const char *label, uint16_t value) {
  * Manejo de la interrupción para el timer 2.
  */
 void tim2_isr(void) {
-  if (timer_get_flag(TIM2, TIM_SR_UIF)) {       // Check for update interrupt
-    timer_clear_flag(TIM2, TIM_SR_UIF);         // Clear the interrupt flag
-    xSemaphoreGiveFromISR(adc_dma_semaphore, NULL); // Give the semaphore from ISR
+  if (timer_get_flag(TIM2, TIM_SR_UIF)) { // Check for update interrupt
+    timer_clear_flag(TIM2, TIM_SR_UIF);   // Clear the interrupt flag
+    xSemaphoreGiveFromISR(adc_dma_semaphore,
+                          NULL); // Give the semaphore from ISR
   }
 }
 
@@ -316,21 +326,18 @@ void dma1_channel1_isr(void) {
 
 // -------------------------------- Funcion principal ---------------------
 int main(void) {
-  configure_pins();
-  configure_usart();
 
-  lcd_init();
+  i2c_semaphore = xSemaphoreCreateBinary();
+  if (i2c_semaphore == NULL) {
+    while (1)
+      ; // Handle semaphore creation failure
+  }
 
-  adc_start_conversion_direct(ADC1);
-
-  // Create the binary semaphore
   adc_dma_semaphore = xSemaphoreCreateBinary();
   if (adc_dma_semaphore == NULL) {
     while (1)
       ; // Handle semaphore creation failure
   }
-
-  configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
 
   control_semaphore = xSemaphoreCreateBinary();
   if (control_semaphore == NULL) {
@@ -338,8 +345,15 @@ int main(void) {
       ; // Handle semaphore creation failure
   }
 
+  configure_pins();
+  configure_usart();
+  adc_start_conversion_direct(ADC1);
+
+  // Create the binary semaphore
+  configure_timer(); // Initialize timer // Cuidado con cambiar el orden!
   configure_adc();
   configure_dma();
+  lcd_init();
 
   // Optionally give semaphore initially
   // xSemaphoreGive(adc_dma_semaphore);
